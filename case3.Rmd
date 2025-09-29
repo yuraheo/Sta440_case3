@@ -28,55 +28,56 @@ library(scales)
 
 load("emsData.RData")
 
-objs <- ls()
-objs
 
-ems <- get(objs[which.max(sapply(objs, function(x) {
-  obj <- get(x, inherits = TRUE)
-  if (is.data.frame(obj)) ncol(obj) else 0
-}))])
 
-ems
+glimpse(x)
+ems <- x
+
 
 ```
 ```{r}
-# Helper: parse safely
-parse_dt <- function(x) parse_date_time(x, orders = c("Ymd HMS", "Ymd HM", "Ymd H", "mdY HMS", "mdY HM", "mdY H"))
+ems <- ems %>%
+  mutate(
+    mins_dispatch_to_enroute = as.numeric(timeToEnroute, units = "mins"),
+    mins_enroute_to_arrival  = as.numeric(observedTT, units = "mins"),
+    mins_dispatch_to_arrival = as.numeric(difftime(DT.ARRIVE, DT.DISP, units = "mins")),
+    mins_on_scene            = as.numeric(onSceneDur, units = "mins"),
+    mins_to_hospital         = as.numeric(toHospitalTT, units = "mins"),
+    mins_turnaround          = as.numeric(difftime(DT.AVAILABLE, DT.ARVREC, units = "mins")),
+    
+    call_date = as_date(DT.DISP),
+    dow       = wday(DT.DISP, label = TRUE, abbr = TRUE),
+    hour      = hour(DT.DISP)
+  )
+
+
+# sanity check
+ems %>%
+  summarise(across(starts_with("mins_"), 
+                   list(min = ~min(.x, na.rm = TRUE),
+                        max = ~max(.x, na.rm = TRUE))))
+
+```
+
+```{r}
+#| label: add scenario
 
 ems <- ems %>%
   mutate(
-    dt_disp      = parse_dt(dt_disp),
-    dt_enroute   = parse_dt(dt_enroute),
-    dt_arrive    = parse_dt(dt_arrive),
-    dt_lvref     = parse_dt(dt_lvref),
-    dt_arvrec    = parse_dt(dt_arvrec),
-    dt_available = parse_dt(dt_available),
+    # S0 (Current: 3 Central, 1 South)
+    resp_S0 = pmin(eTT.BG.Ce, eTT.BG.So, na.rm = TRUE),
 
-    # Durations in minutes (NA-safe)
-    mins_dispatch_to_enroute = as.numeric(difftime(dt_enroute, dt_disp, units = "mins")),
-    mins_enroute_to_arrival  = as.numeric(difftime(dt_arrive,  dt_enroute, units = "mins")),
-    mins_dispatch_to_arrival = as.numeric(difftime(dt_arrive,  dt_disp,    units = "mins")),
-    mins_on_scene            = as.numeric(difftime(dt_lvref,   dt_arrive,  units = "mins")),
-    mins_to_hospital         = as.numeric(difftime(dt_arvrec,  dt_lvref,   units = "mins")),
-    mins_turnaround          = as.numeric(difftime(dt_available, dt_arvrec, units = "mins")),
+    # S1 (3 Central, 1 Near North)
+    resp_S1 = pmin(eTT.BG.Ce, eTT.BG.NN, na.rm = TRUE),
 
-    # Call context
-    call_date = as_date(dt_disp),
-    dow       = wday(dt_disp, label = TRUE, abbr = TRUE),
-    hour      = hour(dt_disp)
+    # S2 (3 Central, 1 Far North)
+    resp_S2 = pmin(eTT.BG.Ce, eTT.BG.FN, na.rm = TRUE),
+
+    # S3 (2 Central, 1 South, 1 Near North)
+    resp_S3 = pmin(eTT.BG.Ce, eTT.BG.So, eTT.BG.NN, na.rm = TRUE),
+
+    # S4 (2 Central, 1 South, 1 Far North)
+    resp_S4 = pmin(eTT.BG.Ce, eTT.BG.So, eTT.BG.FN, na.rm = TRUE)
   )
-
-# Basic sanity checks for negative or extreme durations
-ems %>%
-  summarise(across(starts_with("mins_"), list(min = ~min(.x, na.rm = TRUE), max = ~max(.x, na.rm = TRUE)))) %>%
-  pivot_longer(everything(), names_to = "metric", values_to = "value") %>%
-  arrange(metric) %>%
-  print(n = 50)
-
-# Remove obviously bad negatives 
-ems <- ems %>%
-  mutate(across(starts_with("mins_"),
-                ~ifelse(!is.na(.x) & .x < -5, NA_real_, .x)))
-
 ```
 
