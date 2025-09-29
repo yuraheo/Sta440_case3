@@ -12,3 +12,16 @@ execute:
   message: false
   echo: false
 ---
+
+```{r}
+#| load-libraries
+
+library(tidyverse)
+
+```
+
+```{r}
+load("emsData.RData")
+
+glimpse(x)
+```
