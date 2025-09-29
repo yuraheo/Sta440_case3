@@ -1,0 +1,16 @@
+
+---
+title: "Sta 440 Case 3"
+author: "Sreya Gnanavel, Yura Heo, Lily Seeling"
+date: "September 2025"
+format: 
+  pdf:
+    documentclass: article
+    fontsize: 11pt
+geometry: margin=1in
+execute: 
+  warning: false
+  message: false
+  echo: false
+---
+
