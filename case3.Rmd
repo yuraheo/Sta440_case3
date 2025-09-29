@@ -14,14 +14,69 @@ execute:
 ---
 
 ```{r}
-#| load-libraries
+#| label: load_packages
 
 library(tidyverse)
+library(lubridate)
+library(janitor)    
+library(scales)  
 
 ```
 
 ```{r}
+#| label: data
+
 load("emsData.RData")
 
-glimpse(x)
+objs <- ls()
+objs
+
+ems <- get(objs[which.max(sapply(objs, function(x) {
+  obj <- get(x, inherits = TRUE)
+  if (is.data.frame(obj)) ncol(obj) else 0
+}))])
+
+ems
+
 ```
+```{r}
+# Helper: parse safely
+parse_dt <- function(x) parse_date_time(x, orders = c("Ymd HMS", "Ymd HM", "Ymd H", "mdY HMS", "mdY HM", "mdY H"))
+
+ems <- ems %>%
+  mutate(
+    dt_disp      = parse_dt(dt_disp),
+    dt_enroute   = parse_dt(dt_enroute),
+    dt_arrive    = parse_dt(dt_arrive),
+    dt_lvref     = parse_dt(dt_lvref),
+    dt_arvrec    = parse_dt(dt_arvrec),
+    dt_available = parse_dt(dt_available),
+
+    # Durations in minutes (NA-safe)
+    mins_dispatch_to_enroute = as.numeric(difftime(dt_enroute, dt_disp, units = "mins")),
+    mins_enroute_to_arrival  = as.numeric(difftime(dt_arrive,  dt_enroute, units = "mins")),
+    mins_dispatch_to_arrival = as.numeric(difftime(dt_arrive,  dt_disp,    units = "mins")),
+    mins_on_scene            = as.numeric(difftime(dt_lvref,   dt_arrive,  units = "mins")),
+    mins_to_hospital         = as.numeric(difftime(dt_arvrec,  dt_lvref,   units = "mins")),
+    mins_turnaround          = as.numeric(difftime(dt_available, dt_arvrec, units = "mins")),
+
+    # Call context
+    call_date = as_date(dt_disp),
+    dow       = wday(dt_disp, label = TRUE, abbr = TRUE),
+    hour      = hour(dt_disp)
+  )
+
+# Basic sanity checks for negative or extreme durations
+ems %>%
+  summarise(across(starts_with("mins_"), list(min = ~min(.x, na.rm = TRUE), max = ~max(.x, na.rm = TRUE)))) %>%
+  pivot_longer(everything(), names_to = "metric", values_to = "value") %>%
+  arrange(metric) %>%
+  print(n = 50)
+
+# Remove obviously bad negatives 
+ems <- ems %>%
+  mutate(across(starts_with("mins_"),
+                ~ifelse(!is.na(.x) & .x < -5, NA_real_, .x)))
+
+```
+
