@@ -1,7 +1,6 @@
-
 ---
 title: "Sta 440 Case 3"
-author: "Sreya Gnanavel, Yura Heo, Lily Seeling"
+author: "Sreya Gnanavel, Yura Heo, Lily Seelig"
 date: "September 2025"
 format: 
   pdf:
@@ -13,4 +12,3 @@ execute:
   message: false
   echo: false
 ---
-
