@@ -63,6 +63,8 @@ ems %>%
 ```{r}
 #| label: add scenario
 
+# pmin: minimum travel time across the stafed stations 
+
 ems <- ems %>%
   mutate(
     # S0 (Current: 3 Central, 1 South)
@@ -105,3 +107,33 @@ ems %>%
   geom_density(alpha=0.4) +
   labs(title="Travel Time Distributions Under Different Allocations")
 ```
+```{r}
+ems %>%
+  pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
+  group_by(scenario) %>%
+  summarise(
+    mean = mean(resp_time, na.rm = TRUE),
+    median = median(resp_time, na.rm = TRUE),
+    p90 = quantile(resp_time, 0.9, na.rm = TRUE)
+  )
+```
+```{r}
+ems %>%
+  pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
+  ggplot(aes(resp_time, fill = scenario)) +
+  geom_density(alpha = 0.4) +
+  coord_cartesian(xlim = c(0, 2000)) +   # adjust limit if needed
+  labs(title = "Response time distributions across scenarios",
+       x = "Estimated response time (seconds)", y = "Density")
+```
+```{r}
+ems %>%
+  pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
+  ggplot(aes(scenario, resp_time, fill = scenario)) +
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0, 2000)) +
+  labs(title = "Response time by scenario",
+       x = "Scenario", y = "Estimated response time (seconds)") +
+  theme(legend.position = "none")
+```
+
