@@ -35,6 +35,7 @@ ems <- x
 
 
 ```
+
 ```{r}
 ems <- ems %>%
   mutate(
@@ -81,3 +82,26 @@ ems <- ems %>%
   )
 ```
 
+```{r}
+ems %>%
+  select(eTT.BG.NN, eTT.BG.FN) %>%
+  pivot_longer(cols = everything(), names_to = "Station", values_to = "Time") %>%
+  mutate(Time = Time/60) %>%
+  ggplot(aes(x = Time, fill = Station)) +
+  geom_density(alpha=0.4) +
+  labs(title="Estimated Travel Times: Near vs Far North (Best Guess)",
+       x="Minutes", y="Density")
+summary(ems$eTT.BG.NN/60)
+summary(ems$eTT.BG.FN/60)
+
+ems %>%
+  mutate(current_central = eTT.BG.Ce/60,
+         current_south = eTT.BG.So/60,
+         near_north = eTT.BG.NN/60,
+         far_north = eTT.BG.FN/60) %>%
+  pivot_longer(cols = c(current_central, current_south, near_north, far_north),
+               names_to = "Scenario", values_to = "Minutes") %>%
+  ggplot(aes(x = Minutes, fill = Scenario)) +
+  geom_density(alpha=0.4) +
+  labs(title="Travel Time Distributions Under Different Allocations")
+```
