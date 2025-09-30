@@ -107,6 +107,7 @@ ems %>%
   geom_density(alpha=0.4) +
   labs(title="Travel Time Distributions Under Different Allocations")
 ```
+
 ```{r}
 ems %>%
   pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
@@ -117,6 +118,7 @@ ems %>%
     p90 = quantile(resp_time, 0.9, na.rm = TRUE)
   )
 ```
+
 ```{r}
 ems %>%
   pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
@@ -126,6 +128,7 @@ ems %>%
   labs(title = "Response time distributions across scenarios",
        x = "Estimated response time (seconds)", y = "Density")
 ```
+
 ```{r}
 ems %>%
   pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
@@ -137,3 +140,178 @@ ems %>%
   theme(legend.position = "none")
 ```
 
+```{r}
+regional_summary <- ems %>%
+  group_by(REF.GRID) %>%
+  summarise(across(starts_with("resp_"),
+                   list(mean = ~mean(.x, na.rm=TRUE)/60,
+                        median = ~median(.x, na.rm=TRUE)/60,
+                        p90 = ~quantile(.x, 0.9, na.rm=TRUE)/60)))
+
+regional_summary
+
+```
+
+### Boxplot
+
+```{r}
+
+ems_long <- ems %>%
+  select(REF.GRID, starts_with("resp_S")) %>%
+  pivot_longer(cols = starts_with("resp_S"), 
+               names_to = "Scenario", values_to = "RespTime") %>%
+  mutate(
+    Scenario = gsub("resp_", "", Scenario),   # cleaner scenario names
+    RespTime_min = RespTime / 60
+  )
+
+ggplot(ems_long, aes(x = Scenario, y = RespTime_min, fill = Scenario)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  facet_wrap(~REF.GRID, scales = "free_y") +
+  geom_hline(yintercept=8, linetype="dashed", color="red") +
+  labs(title="Response Times Across Scenarios by District",
+       subtitle="Dashed red line = 8-minute benchmark",
+       x="Scenario", y="Response Time (minutes)") +
+  theme_minimal() +
+  theme(legend.position="none",
+        strip.text = element_text(size=12, face="bold"))
+```
+
+```{r}
+ems_long %>%
+  group_by(Scenario, REF.GRID) %>%
+  summarise(pct_under8 = mean(RespTime_min <= 8, na.rm=TRUE)*100) %>%
+  ggplot(aes(x=Scenario, y=pct_under8, fill=REF.GRID)) +
+  geom_col(position="dodge") +
+  labs(title="% of Calls Under 8-min by Scenario and District",
+       y="% Calls < 8 min", x="Scenario", fill="District") +
+  theme_minimal()
+```
+
+### Modeling 
+
+```{r}
+ems_long <- ems_long %>%
+  mutate(meet8 = ifelse(RespTime_min <= 8, 1, 0))
+
+
+fit_logit <- glm(meet8 ~ Scenario * REF.GRID,
+                 data = ems_long,
+                 family = binomial)
+
+summary(fit_logit)   
+
+pred_probs <- emmeans(fit_logit, ~ Scenario | REF.GRID, type = "response")
+pred_df <- as.data.frame(pred_probs)  
+head(pred_df)
+
+
+ggplot(pred_df, aes(x=Scenario, y=prob*100, fill=REF.GRID)) +
+  geom_col(position="dodge") +
+  geom_errorbar(aes(ymin=asymp.LCL*100,
+                    ymax=asymp.UCL*100),
+                position=position_dodge(0.9), width=0.2) +
+  labs(title="% of Calls Under 8-Minute Benchmark (Model-Based)",
+       y="% Calls Under 8 Minutes", x="Scenario", fill="District") +
+  theme_minimal()
+
+delta_df <- pred_df %>%
+  group_by(REF.GRID) %>%
+  mutate(delta_vs_S0 = (prob - prob[Scenario=="S0"])*100)
+
+ggplot(delta_df, aes(x=Scenario, y=delta_vs_S0, fill=REF.GRID)) +
+  geom_col(position="dodge") +
+  labs(title="Improvement Over Current (S0)",
+       y="Change in % of Calls Under 8 min",
+       x="Scenario", fill="District") +
+  theme_minimal()
+
+```
+
+### Workload/Busy Ratio
+
+```{r}
+x <- x %>%
+  mutate(dispToClear_mins = as.numeric(difftime(DT.AVAILABLE, DT.DISP, units="mins")),
+         onScene_mins = as.numeric(onSceneDur/60))
+
+x %>% group_by(VEH.GRID) %>%
+  summarise(mean_busy_time = mean(dispToClear_mins, na.rm=TRUE),
+            calls_handled = n()) %>%
+  ggplot(aes(x=reorder(VEH.GRID, -calls_handled), y=calls_handled, fill=mean_busy_time)) +
+  geom_col() + 
+  scale_fill_viridis_c() +
+  labs(title="Workload by Ambulance", x="Ambulance", y="Calls Handled")
+```
+
+```{r}
+
+x <- x %>%
+  mutate(
+    DT.DISP      = as.POSIXct(DT.DISP, format="%m/%d/%Y %H:%M:%S", tz="EST"),
+    DT.ENROUTE   = as.POSIXct(DT.ENROUTE, format="%m/%d/%Y %H:%M:%S", tz="EST"),
+    DT.ARRIVE    = as.POSIXct(DT.ARRIVE, format="%m/%d/%Y %H:%M:%S", tz="EST"),
+    DT.LVREF     = as.POSIXct(DT.LVREF, format="%m/%d/%Y %H:%M:%S", tz="EST"),
+    DT.ARVREC    = as.POSIXct(DT.ARVREC, format="%m/%d/%Y %H:%M:%S", tz="EST"),
+    DT.AVAILABLE = as.POSIXct(DT.AVAILABLE, format="%m/%d/%Y %H:%M:%S", tz="EST")
+  )
+
+x <- x %>%
+  mutate(
+    busy_time = as.numeric(difftime(DT.AVAILABLE, DT.DISP, units="mins"))
+  )
+
+busy_stats <- x %>%
+  group_by(VEH.GRID) %>%
+  summarise(
+    total_busy_hr = sum(busy_time, na.rm=TRUE)/60,
+    calls = n()
+  ) %>%
+  mutate(shift_hr = 24*30,  
+         busy_fraction = total_busy_hr / shift_hr)
+
+busy_stats
+
+ggplot(x, aes(x=DT.DISP, y=VEH.GRID, color=busy_time)) +
+  geom_segment(aes(xend=DT.AVAILABLE, yend=VEH.GRID), size=2) +
+  labs(title="Ambulance Busy Intervals (Dispatch → Available)",
+       x="Time", y="Ambulance")
+```
+
+```{r}
+busy_stats <- x %>%
+  group_by(VEH.GRID) %>%
+  mutate(span_days = as.numeric(difftime(max(x$DT.DISP, na.rm=TRUE),
+                                         min(x$DT.DISP, na.rm=TRUE),
+                                         units="days")),
+         shift_hr = span_days * 24,
+         busy_fraction = total_busy_hr / shift_hr)
+
+ggplot(busy_stats, aes(x=reorder(VEH.GRID, -busy_fraction), y=busy_fraction, fill=busy_fraction)) +
+  geom_col() +
+  scale_fill_viridis(option="C", name="Fraction Busy") +
+  labs(title="Ambulance Busy Fraction (Utilization)", 
+       x="Ambulance", y="Fraction of Time Busy") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(x %>% filter(grepl("North", REF.GRID)), 
+       aes(x = eTT.BG.NN/60, y = eTT.BG.FN/60)) +
+  geom_point(alpha=0.4, color="blue") +
+  geom_abline(slope=1, intercept=0, lty=2, color="red") +
+  labs(title="Near vs Far North Predicted Response Times (North District Calls)",
+       x="Near North Travel Time (min)", 
+       y="Far North Travel Time (min)") +
+  theme_minimal()
+
+x %>% 
+  filter(grepl("North", REF.GRID)) %>%
+  summarise(
+    mean_NN = mean(eTT.BG.NN, na.rm=TRUE)/60,
+    mean_FN = mean(eTT.BG.FN, na.rm=TRUE)/60,
+    median_NN = median(eTT.BG.NN, na.rm=TRUE)/60,
+    median_FN = median(eTT.BG.FN, na.rm=TRUE)/60,
+    avg_diff = mean((eTT.BG.FN - eTT.BG.NN)/60, na.rm=TRUE)  #farnorth - nearnorth
+  )
+```
