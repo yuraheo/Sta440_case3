@@ -132,15 +132,16 @@ ems %>%
 ```{r}
 ems %>%
   pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
-  ggplot(aes(scenario, resp_time, fill = scenario)) +
+  mutate(resp_time_min = resp_time / 60) %>%
+  ggplot(aes(scenario, resp_time_min, fill = scenario)) +
   geom_boxplot(outlier.shape = NA) +
-  coord_cartesian(ylim = c(0, 1000)) +  
+  coord_cartesian(ylim = c(0, 20)) +   # 1000 sec ≈ 16.7 min
   labs(title = "Response time by scenario",
-       x = "Scenario", y = "Estimated response time (seconds)") +
+       x = "Scenario", y = "Estimated response time (minutes)") +
   theme(legend.position = "none")
 ```
-The figure above compares estimated response times under five station-allocation scenarios by constructing, for each call, the minimum best-guess travel time among the stations staffed in that scenario and summarizing these distributions with boxplots. System-wide, scenario S3 (adding a station in Near-North) exhibits the lowest median response time and a comparatively tight interquartile range, indicating improvements over the current configuration (S0). Scenarios S1 and S2 do not improve system-level medians relative to S0, whereas S4 performs between S0 and S3. 
 
+The figure above compares estimated response times under five station-allocation scenarios by constructing, for each call, the minimum best-guess travel time among the stations staffed in that scenario and summarizing these distributions with boxplots. System-wide, scenario S3 (adding a station in Near-North) exhibits the lowest median response time and a comparatively tight interquartile range, indicating improvements over the current configuration (S0). Scenarios S1 and S2 do not improve system-level medians relative to S0, whereas S4 performs between S0 and S3.
 
 ```{r}
 regional_summary <- ems %>%
@@ -153,8 +154,6 @@ regional_summary <- ems %>%
 regional_summary
 
 ```
-
-
 
 ### Boxplot
 
@@ -191,6 +190,7 @@ ems_long %>%
        y="% Calls < 8 min", x="Scenario", fill="District") +
   theme_minimal()
 ```
+
 ```{r}
 
 station_names <- c(
@@ -248,14 +248,10 @@ ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
 
 
 ```
-The faceted maps illustrate how the geographic coverage of the fastest stations shifts under different station allocations. Under the current system (S0), most calls are served by Central and South, with Central dominating northern calls. 
-In S1, the introduction of a Near North station allows some northern calls to be captured by that base, although Central still handles the majority. In S2, adding a Far North station shifts coverage of the northernmost calls away from Central, though the overall impact is limited to a smaller set of points.
-Scenarios S3 and S4, which reduce Central capacity to two ambulances while introducing Near North or Far North coverage, show clearer redistribution: The Near North (S3)
- and Far North (S4) stations assume responsibility for portions of the northern district, while Central and South continue to dominate elsewhere.
- Taken together, the map suggests that a Near North station (s1/S3) provides more widespread northern coverage than a Far North station, though both options reduce reliance on Central for calls in the northernmost areas. This supports the conclusion that strategically relocating one unit north can improve equity of service across regions, particularly in the underserved North district.
- 
- 
-### Modeling 
+
+The faceted maps illustrate how the geographic coverage of the fastest stations shifts under different station allocations. Under the current system (S0), most calls are served by Central and South, with Central dominating northern calls. In S1, the introduction of a Near North station allows some northern calls to be captured by that base, although Central still handles the majority. In S2, adding a Far North station shifts coverage of the northernmost calls away from Central, though the overall impact is limited to a smaller set of points. Scenarios S3 and S4, which reduce Central capacity to two ambulances while introducing Near North or Far North coverage, show clearer redistribution: The Near North (S3) and Far North (S4) stations assume responsibility for portions of the northern district, while Central and South continue to dominate elsewhere. Taken together, the map suggests that a Near North station (s1/S3) provides more widespread northern coverage than a Far North station, though both options reduce reliance on Central for calls in the northernmost areas. This supports the conclusion that strategically relocating one unit north can improve equity of service across regions, particularly in the underserved North district.
+
+### Modeling
 
 ```{r}
 library(emmeans)
@@ -384,9 +380,7 @@ x %>%
   )
 ```
 
-
 Travel time = turnout (DT.Enroute - DT.DISP) + drive time to the scene (eTT)
-
 
 ```{r}
 # 1) Build turnout (dispatch -> enroute) in minutes
@@ -438,3 +432,27 @@ glimpse(tt_long)
 
 ```
 
+```{r}
+ggplot(tt_long, aes(x=Scenario, y=TravelTime_min, fill=Scenario)) +
+  geom_boxplot(outlier.alpha=0.15) +
+  facet_wrap(~REF.GRID) +
+  geom_hline(yintercept=8, linetype="dashed", color="red") +
+  labs(title="Scenario Comparisons by District",
+       y="Response Time (minutes)", x="Scenario") +
+  theme_minimal()
+```
+
+```{r}
+tt_long %>%
+  ggplot(aes(x = Scenario, y = TravelTime_min, fill = Scenario)) +
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0, 10)) +   # adjust as needed
+  labs(
+    title = "Response time by scenario",
+    x = "Scenario",
+    y = "Estimated response time (minutes)"    # change to seconds if needed
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
