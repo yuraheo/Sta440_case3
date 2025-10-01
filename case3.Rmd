@@ -134,11 +134,13 @@ ems %>%
   pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
   ggplot(aes(scenario, resp_time, fill = scenario)) +
   geom_boxplot(outlier.shape = NA) +
-  coord_cartesian(ylim = c(0, 2000)) +
+  coord_cartesian(ylim = c(0, 1000)) +  
   labs(title = "Response time by scenario",
        x = "Scenario", y = "Estimated response time (seconds)") +
   theme(legend.position = "none")
 ```
+The figure above compares estimated response times under five station-allocation scenarios by constructing, for each call, the minimum best-guess travel time among the stations staffed in that scenario and summarizing these distributions with boxplots. System-wide, scenario S3 (adding a station in Near-North) exhibits the lowest median response time and a comparatively tight interquartile range, indicating improvements over the current configuration (S0). Scenarios S1 and S2 do not improve system-level medians relative to S0, whereas S4 performs between S0 and S3. 
+
 
 ```{r}
 regional_summary <- ems %>%
@@ -151,6 +153,8 @@ regional_summary <- ems %>%
 regional_summary
 
 ```
+
+
 
 ### Boxplot
 
@@ -187,10 +191,74 @@ ems_long %>%
        y="% Calls < 8 min", x="Scenario", fill="District") +
   theme_minimal()
 ```
+```{r}
 
+station_names <- c(
+  "eTT.BG.Ce" = "Central",
+  "eTT.BG.So" = "South",
+  "eTT.BG.NN" = "Near North",
+  "eTT.BG.FN" = "Far North"
+)
+
+station_palette <- c(
+  "Central"    = "#1f77b4",
+  "South"      = "#ff7f0e",
+  "Near North" = "#2ca02c",
+  "Far North"  = "#d62728"
+)
+
+scenario_sets <- list(
+  S0 = c("eTT.BG.Ce", "eTT.BG.So"),                      # 3 Central, 1 South
+  S1 = c("eTT.BG.Ce", "eTT.BG.NN"),                      # 3 Central, 1 Near North
+  S2 = c("eTT.BG.Ce", "eTT.BG.FN"),                      # 3 Central, 1 Far North
+  S3 = c("eTT.BG.Ce", "eTT.BG.So", "eTT.BG.NN"),         # 2 Central, 1 South, 1 Near North
+  S4 = c("eTT.BG.Ce", "eTT.BG.So", "eTT.BG.FN")          # 2 Central, 1 South, 1 Far North
+)
+
+# Ensure we have an ID per call
+ems <- ems %>% mutate(call_id = row_number())
+
+winners <- map_dfr(names(scenario_sets), function(scn) {
+  cols <- scenario_sets[[scn]]
+
+  ems %>%
+    select(call_id, REF.GPS.LAT, REF.GPS.LON, all_of(cols)) %>%
+    rowwise() %>%
+    mutate(
+      scenario = scn,
+      # scalar min across the active columns (treat NAs as Inf so they can't "win")
+      resp_sec = min(replace_na(c_across(all_of(cols)), Inf)),
+      # find index of the minimum and map to station label
+      fastest  = station_names[ cols[ which.min(replace_na(c_across(all_of(cols)), Inf)) ] ]
+    ) %>%
+    ungroup() %>%
+    select(call_id, REF.GPS.LAT, REF.GPS.LON, scenario, fastest, resp_sec)
+})
+ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
+  geom_point(alpha = 0.55, size = 1.4) +
+  scale_color_manual(values = station_palette, name = "Fastest station") +
+  coord_quickmap() +
+  facet_wrap(~ scenario, ncol = 3) +
+  labs(
+    title = "Fastest station by scenario  (eTT)",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
+
+
+```
+The faceted maps illustrate how the geographic coverage of the fastest stations shifts under different station allocations. Under the current system (S0), most calls are served by Central and South, with Central dominating northern calls. 
+In S1, the introduction of a Near North station allows some northern calls to be captured by that base, although Central still handles the majority. In S2, adding a Far North station shifts coverage of the northernmost calls away from Central, though the overall impact is limited to a smaller set of points.
+Scenarios S3 and S4, which reduce Central capacity to two ambulances while introducing Near North or Far North coverage, show clearer redistribution: The Near North (S3)
+ and Far North (S4) stations assume responsibility for portions of the northern district, while Central and South continue to dominate elsewhere.
+ Taken together, the map suggests that a Near North station (s1/S3) provides more widespread northern coverage than a Far North station, though both options reduce reliance on Central for calls in the northernmost areas. This supports the conclusion that strategically relocating one unit north can improve equity of service across regions, particularly in the underserved North district.
+ 
+ 
 ### Modeling 
 
 ```{r}
+library(emmeans)
 ems_long <- ems_long %>%
   mutate(meet8 = ifelse(RespTime_min <= 8, 1, 0))
 
