@@ -383,3 +383,58 @@ x %>%
     avg_diff = mean((eTT.BG.FN - eTT.BG.NN)/60, na.rm=TRUE)  #farnorth - nearnorth
   )
 ```
+
+
+Travel time = turnout (DT.Enroute - DT.DISP) + drive time to the scene (eTT)
+
+
+```{r}
+# 1) Build turnout (dispatch -> enroute) in minutes
+ems_tt <- ems %>%
+  filter(!is.na(DT.DISP), !is.na(DT.ENROUTE)) %>%
+  mutate(
+    turnout_min = as.numeric(difftime(DT.ENROUTE, DT.DISP, units = "mins")),
+    # convert Google best-guess ETAs to minutes (drop /60 if already minutes)
+    ce_bg_min = eTT.BG.Ce / 60,
+    so_bg_min = eTT.BG.So / 60,
+    nn_bg_min = eTT.BG.NN / 60,
+    fn_bg_min = eTT.BG.FN / 60
+  ) %>%
+  # 2) Scenario-specific driving ETA (NA-safe; if all NA for a row, keep NA)
+  rowwise() %>%
+  mutate(
+    eta_S0 = {v <- c(ce_bg_min, so_bg_min);            v <- ifelse(is.na(v), Inf, v); m <- min(v); if (is.infinite(m)) NA_real_ else m},
+    eta_S1 = {v <- c(ce_bg_min, nn_bg_min);            v <- ifelse(is.na(v), Inf, v); m <- min(v); if (is.infinite(m)) NA_real_ else m},
+    eta_S2 = {v <- c(ce_bg_min, fn_bg_min);            v <- ifelse(is.na(v), Inf, v); m <- min(v); if (is.infinite(m)) NA_real_ else m},
+    eta_S3 = {v <- c(ce_bg_min, so_bg_min, nn_bg_min); v <- ifelse(is.na(v), Inf, v); m <- min(v); if (is.infinite(m)) NA_real_ else m},
+    eta_S4 = {v <- c(ce_bg_min, so_bg_min, fn_bg_min); v <- ifelse(is.na(v), Inf, v); m <- min(v); if (is.infinite(m)) NA_real_ else m}
+  ) %>%
+  ungroup() %>%
+  # 3) Travel time per scenario = turnout + scenario ETA (minutes)
+  mutate(
+    tt0 = turnout_min + eta_S0,   # S0 (Current: Ce + So)
+    tt1 = turnout_min + eta_S1,   # S1 (Ce + NN)
+    tt2 = turnout_min + eta_S2,   # S2 (Ce + FN)
+    tt3 = turnout_min + eta_S3,   # S3 (Ce + So + NN)
+    tt4 = turnout_min + eta_S4    # S4 (Ce + So + FN)
+  )
+
+# 4) Long format (tidy)
+tt_long <- ems_tt %>%
+  mutate(call_id = row_number()) %>%
+  select(call_id, REF.GRID, starts_with("tt")) %>%
+  pivot_longer(
+    cols = starts_with("tt"),
+    names_to = "Scenario",
+    values_to = "TravelTime_min"
+  ) %>%
+  mutate(
+    Scenario = factor(Scenario,
+                      levels = c("tt0","tt1","tt2","tt3","tt4"),
+                      labels = c("S0","S1","S2","S3","S4"))
+  )
+
+glimpse(tt_long)
+
+```
+
