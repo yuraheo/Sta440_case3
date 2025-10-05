@@ -456,3 +456,90 @@ tt_long %>%
   theme(legend.position = "none")
 
 ```
+====YURA====
+
+
+
+Order each ambulance's dispatch time  
+* Each row: one call by that specific truck
+```{r}
+# order dispatches and compute diffs per truck 
+ems_calls <- ems %>%
+  select(VEH.GRID, DT.DISP, DT.AVAILABLE) %>%
+  filter(!is.na(DT.DISP)) %>%
+  mutate(
+    DT.DISP      = as_datetime(DT.DISP),
+    DT.AVAILABLE = as_datetime(DT.AVAILABLE)
+  ) %>%
+  arrange(VEH.GRID, DT.DISP) %>% # sort chronologically per medic
+  group_by(VEH.GRID) %>%
+  mutate(
+    call_index     = row_number(), # order each medic's calls
+    dispatch_gap_m = as.numeric(difftime(DT.DISP, lag(DT.DISP), units = "mins")) # gap since last call
+  ) %>%
+  ungroup()
+
+ems_calls
+```
+Extract k-th dispatch/available time per unit & build one vector of dispatch time, one vector of availble times.
+```{r}
+library(purrr)
+library(stringr)
+
+# reutrn k-th timestamp for a given truct and disp & avail time
+kth_time <- function(df, unit, k, col) {
+  v <- df %>%
+    filter(VEH.GRID == unit) %>%     # keep rows for this ambulance only
+    arrange(DT.DISP) %>%             # order that unit’s calls chronologically
+    pull({{ col }})                  # pull the chosen timestamp column (tidy-eval)
+  if (length(v) >= k) v[[k]] else as.POSIXct(NA_real_, tz = "UTC")  # return k-th or NA
+}
+
+occ_idx <- 1 # which occurence index to compare (e.g. 1 == first run per unit)
+
+# Medic 1-7
+units <- ems_calls %>%
+  distinct(VEH.GRID) %>%
+  mutate(ord = as.integer(str_extract(VEH.GRID, "\\d+"))) %>%
+  arrange(ord) %>%
+  pull(VEH.GRID)
+
+
+disp_vec  <- do.call(c, map(units, ~ kth_time(ems_calls, .x, occ_idx, DT.DISP)))
+avail_vec <- do.call(c, map(units, ~ kth_time(ems_calls, .x, occ_idx, DT.AVAILABLE)))
+
+avail_vec
+```
+# build 7x7 T/F matrix
+x[i, j] is TRUE if Medic i's k-th dispatch time <= Medic j's k-th available time
+```{r}
+x <- outer(disp_vec, avail_vec, FUN = function(a,b) a<= b)
+
+# Zero upper triangle + diagonal to avoid duplicates/self-comparisons
+x[upper.tri(x, diag = TRUE)] <- FALSE
+
+x
+```
+
+Ex: row 5 (Medic 5): Col 1-4 are true, meaning when Medic 5 dispatched, medics 1-4 were still busy \\
+Row 7: only medic 3-4 were not back yet when medic 7 dispatched \\
+
+Conflict rule ftn??: 
+* for each call, tracks location closest
+* if fastest is NN/FN, assign it immediately
+* otherwise, pick from BASE.NAME pick one who is free at DT.DISP
+* if none are free, choose the one who becomes free soonest and add wait penalty
+
+```{r model}
+library(lme4)
+library(emmeans)
+tt_long <- tt_long %>%
+  mutate(
+    Scenario = factor(Scenario, levels = c("S0","S1","S2","S3","S4")),
+    log_tt = log(TravelTime_min)
+  )
+
+m_tt <- lmer(log_tt ~ Scenario + (1 | call_id), data = tt_long, REML = TRUE)
+summary(m_tt)
+```
+
