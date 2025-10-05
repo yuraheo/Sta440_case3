@@ -530,6 +530,8 @@ Ex: row 5 (Medic 5): Col 1-4 are true, meaning when Medic 5 dispatched, medics 1
 
 Conflict rule ftn??: \* for each call, tracks location closest \* if fastest is NN/FN, assign it immediately \* otherwise, pick from BASE.NAME pick one who is free at DT.DISP \* if none are free, choose the one who becomes free soonest and add wait penalty
 
+sreya
+
 ```{r model}
 library(lme4)
 library(emmeans)
