@@ -456,12 +456,12 @@ tt_long %>%
   theme(legend.position = "none")
 
 ```
+
 ====YURA====
 
+Order each ambulance's dispatch time\
+\* Each row: one call by that specific truck
 
-
-Order each ambulance's dispatch time  
-* Each row: one call by that specific truck
 ```{r}
 # order dispatches and compute diffs per truck 
 ems_calls <- ems %>%
@@ -481,7 +481,9 @@ ems_calls <- ems %>%
 
 ems_calls
 ```
+
 Extract k-th dispatch/available time per unit & build one vector of dispatch time, one vector of availble times.
+
 ```{r}
 library(purrr)
 library(stringr)
@@ -510,8 +512,11 @@ avail_vec <- do.call(c, map(units, ~ kth_time(ems_calls, .x, occ_idx, DT.AVAILAB
 
 avail_vec
 ```
+
 # build 7x7 T/F matrix
-x[i, j] is TRUE if Medic i's k-th dispatch time <= Medic j's k-th available time
+
+x\[i, j\] is TRUE if Medic i's k-th dispatch time \<= Medic j's k-th available time
+
 ```{r}
 x <- outer(disp_vec, avail_vec, FUN = function(a,b) a<= b)
 
@@ -521,14 +526,9 @@ x[upper.tri(x, diag = TRUE)] <- FALSE
 x
 ```
 
-Ex: row 5 (Medic 5): Col 1-4 are true, meaning when Medic 5 dispatched, medics 1-4 were still busy \\
-Row 7: only medic 3-4 were not back yet when medic 7 dispatched \\
+Ex: row 5 (Medic 5): Col 1-4 are true, meaning when Medic 5 dispatched, medics 1-4 were still busy \\ Row 7: only medic 3-4 were not back yet when medic 7 dispatched \\
 
-Conflict rule ftn??: 
-* for each call, tracks location closest
-* if fastest is NN/FN, assign it immediately
-* otherwise, pick from BASE.NAME pick one who is free at DT.DISP
-* if none are free, choose the one who becomes free soonest and add wait penalty
+Conflict rule ftn??: \* for each call, tracks location closest \* if fastest is NN/FN, assign it immediately \* otherwise, pick from BASE.NAME pick one who is free at DT.DISP \* if none are free, choose the one who becomes free soonest and add wait penalty
 
 ```{r model}
 library(lme4)
@@ -543,3 +543,110 @@ m_tt <- lmer(log_tt ~ Scenario + (1 | call_id), data = tt_long, REML = TRUE)
 summary(m_tt)
 ```
 
+```{r}
+library(performance)
+
+tt_long$fit_log   <- fitted(m_tt)              # fitted on log scale
+tt_long$resid_raw <- resid(m_tt, type = "response")  # residuals on log scale
+tt_long$resid_std <- resid(m_tt, type = "pearson")   # Pearson standardized residuals
+
+# QQ plot of residuals (log scale)
+ggplot(tt_long, aes(sample = resid_raw)) +
+  stat_qq(alpha = 0.5) +
+  stat_qq_line(color = "red") +
+  labs(title = "QQ plot of residuals (log scale)",
+       x = "Theoretical Quantiles", y = "Sample Quantiles") +
+  theme_minimal()
+
+# Residuals vs fitted (log scale)
+ggplot(tt_long, aes(x = fit_log, y = resid_raw)) +
+  geom_point(alpha = 0.4) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Residuals vs Fitted (log scale)",
+       x = "Fitted log response time", y = "Residuals (log)") +
+  theme_minimal()
+
+# Scale-Location plot (sqrt(|standardized residuals|) vs fitted)
+ggplot(tt_long, aes(x = fit_log, y = sqrt(abs(resid_std)))) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(se = FALSE, color = "blue") +
+  labs(title = "Scale-Location",
+       x = "Fitted log response time", y = "Sqrt(|standardized residuals|)") +
+  theme_minimal()
+
+# One-stop shop diagnostics (optional)
+performance::check_model(m_tt)  # opens a panel of diagnostic plots
+```
+
+```{r}
+re_call <- ranef(m_tt)$call_id[,1, drop = TRUE]  # random intercepts
+qqnorm(re_call, main = "QQ plot of random intercepts (call_id)")
+qqline(re_call, col = "red")
+```
+
+```{r}
+library(performance)
+
+# R2 (marginal = fixed effects only; conditional = fixed + random)
+performance::r2_nakagawa(m_tt)
+
+# Predictions and residuals on log scale
+pred_log_fe   <- predict(m_tt, re.form = NA)     # fixed effects only
+pred_log_full <- predict(m_tt, re.form = NULL)   # fixed + random
+
+res_log_fe    <- tt_long$log_tt - pred_log_fe
+res_log_full  <- tt_long$log_tt - pred_log_full
+
+RMSE_log_fe   <- sqrt(mean(res_log_fe^2))
+MAE_log_fe    <- mean(abs(res_log_fe))
+RMSE_log_full <- sqrt(mean(res_log_full^2))
+MAE_log_full  <- mean(abs(res_log_full))
+
+# Back-transform to minutes (note: exp(pred_log) is median on minutes scale)
+pred_min_full <- exp(pred_log_full)
+RMSE_min      <- sqrt(mean((tt_long$TravelTime_min - pred_min_full)^2))
+MAE_min       <- mean(abs(tt_long$TravelTime_min - pred_min_full))
+
+c(RMSE_log_fe = RMSE_log_fe, MAE_log_fe = MAE_log_fe,
+  RMSE_log_full = RMSE_log_full, MAE_log_full = MAE_log_full,
+  RMSE_min = RMSE_min, MAE_min = MAE_min)
+
+# ICC (proportion of variance due to call-level random intercept)
+vc <- as.data.frame(VarCorr(m_tt))
+var_call <- vc$vcov[vc$grp == "call_id"]
+var_res  <- vc$vcov[vc$grp == "Residual"]
+ICC <- var_call / (var_call + var_res)
+ICC
+```
+
+```{r}
+library(emmeans)
+library(dplyr)
+
+emm_log <- emmeans(m_tt, ~ Scenario)
+
+# Back-transform to minutes (geometric mean) and rank (lower = better)
+emm_min <- as.data.frame(summary(emm_log)) %>%
+  transmute(
+    Scenario,
+    minutes   = exp(emmean),
+    lower_CL  = exp(lower.CL),
+    upper_CL  = exp(upper.CL)
+  ) %>%
+  arrange(minutes)
+
+emm_min   # choose the scenario with the smallest 'minutes' here
+
+# # Percent change vs S0
+# ctr_vs_S0 <- contrast(emm_log, method = "trt.vs.ctrl", ref = "S0")
+# pct_vs_S0 <- as.data.frame(summary(ctr_vs_S0)) %>%
+#   transmute(
+#     contrast,
+#     pct_change = (exp(estimate) - 1) * 100,
+#     lwr        = (exp(lower.CL) - 1) * 100,
+#     upr        = (exp(upper.CL) - 1) * 100,
+#     p.value
+#   )
+# 
+# pct_vs_S0  # negative pct_change means faster than S0
+```
