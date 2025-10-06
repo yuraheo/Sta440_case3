@@ -19,7 +19,8 @@ execute:
 library(tidyverse)
 library(lubridate)
 library(janitor)    
-library(scales)  
+library(scales)
+install.packages("performance")
 
 ```
 
@@ -342,22 +343,6 @@ ggplot(x, aes(x=DT.DISP, y=VEH.GRID, color=busy_time)) +
        x="Time", y="Ambulance")
 ```
 
-```{r}
-busy_stats <- x %>%
-  group_by(VEH.GRID) %>%
-  mutate(span_days = as.numeric(difftime(max(x$DT.DISP, na.rm=TRUE),
-                                         min(x$DT.DISP, na.rm=TRUE),
-                                         units="days")),
-         shift_hr = span_days * 24,
-         busy_fraction = total_busy_hr / shift_hr)
-
-ggplot(busy_stats, aes(x=reorder(VEH.GRID, -busy_fraction), y=busy_fraction, fill=busy_fraction)) +
-  geom_col() +
-  scale_fill_viridis(option="C", name="Fraction Busy") +
-  labs(title="Ambulance Busy Fraction (Utilization)", 
-       x="Ambulance", y="Fraction of Time Busy") +
-  theme_minimal()
-```
 
 ```{r}
 ggplot(x %>% filter(grepl("North", REF.GRID)), 
@@ -587,8 +572,6 @@ qqline(re_call, col = "red")
 ```
 
 ```{r}
-library(performance)
-
 # R2 (marginal = fixed effects only; conditional = fixed + random)
 performance::r2_nakagawa(m_tt)
 
