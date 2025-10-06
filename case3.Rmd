@@ -343,7 +343,6 @@ ggplot(x, aes(x=DT.DISP, y=VEH.GRID, color=busy_time)) +
        x="Time", y="Ambulance")
 ```
 
-
 ```{r}
 ggplot(x %>% filter(grepl("North", REF.GRID)), 
        aes(x = eTT.BG.NN/60, y = eTT.BG.FN/60)) +
@@ -634,4 +633,86 @@ emm_min   # choose the scenario with the smallest 'minutes' here
 #   )
 # 
 # pct_vs_S0  # negative pct_change means faster than S0
+```
+
+NEW CODE:
+
+```{r}
+library(dplyr)
+library(geosphere)
+
+# 1️⃣ Define which stations are available in each scenario
+station_scenarios <- list(
+  S0 = c("South", "Central"),
+  S1 = c("Near North", "Central"),
+  S2 = c("Far North", "Central"),
+  S3 = c("Near North", "Central", "South"),
+  S4 = c("Far North", "Central", "South")
+)
+
+# 2️⃣ Define coordinates for each station (replace with your own or derive from VEHCGPS if available)
+station_coords <- data.frame(
+  station = c("South", "Central", "Near North", "Far North"),
+  lat = c(35.76, 35.89, 35.98, 36.05),
+  lon = c(-78.64, -78.91, -78.88, -78.75)
+)
+
+# 3️⃣ Function: find closest available station based on distance
+get_closest_station <- function(call_lat, call_lon, available_regions) {
+  coords <- station_coords %>% filter(station %in% available_regions)
+  if (nrow(coords) == 0) return(NA)
+  dists <- distHaversine(cbind(coords$lon, coords$lat), c(call_lon, call_lat))
+  coords$station[which.min(dists)]
+}
+
+# 4️⃣ Function: build scenario dataset
+build_scenario <- function(data, scenario_name) {
+  regions <- station_scenarios[[scenario_name]]
+  
+  data <- data %>%
+    arrange(DT.DISP) %>%
+    mutate(
+      available_stations = paste(regions, collapse = ", "),
+      
+      # Find closest available station for each call
+      closest_station = mapply(get_closest_station, REF.GPS.LAT, REF.GPS.LON, 
+                               MoreArgs = list(available_regions = regions)),
+      
+      # Compute service time & time until next call
+      total_service_secs = as.numeric(difftime(DT.AVAILABLE, DT.DISP, units = "secs")),
+      time_until_next_call = as.numeric(difftime(lead(DT.DISP), DT.DISP, units = "secs"))
+    )
+  
+  # Add "next free" wait time if no ambulance is available
+  data <- data %>%
+    mutate(
+      next_free_secs = ifelse(is.na(closest_station),
+                              min(total_service_secs, na.rm = TRUE),
+                              0),
+      effective_response_time = total_service_secs + next_free_secs,
+      can_handle_next = effective_response_time < time_until_next_call
+    )
+  
+  return(data)
+}
+
+# 5️⃣ Build datasets for all 5 scenarios
+ems_S0 <- build_scenario(ems, "S0")
+ems_S1 <- build_scenario(ems, "S1")
+ems_S2 <- build_scenario(ems, "S2")
+ems_S3 <- build_scenario(ems, "S3")
+ems_S4 <- build_scenario(ems, "S4")
+
+# ✅ Check counts
+nrow(ems)
+nrow(ems_S0)
+
+```
+
+```{r}
+ems_S0
+```
+
+```{r}
+ems_S3
 ```
