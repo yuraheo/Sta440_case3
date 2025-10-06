@@ -716,3 +716,55 @@ ems_S0
 ```{r}
 ems_S3
 ```
+
+```{r}
+library(dplyr)
+
+# 1️⃣ Define number of units per scenario
+scenario_units <- list(
+  S0 = c(FN = 0, NN = 0, Ce = 3, So = 1),
+  S1 = c(FN = 0, NN = 1, Ce = 3, So = 0),
+  S2 = c(FN = 1, NN = 0, Ce = 3, So = 0),
+  S3 = c(FN = 0, NN = 1, Ce = 2, So = 1),
+  S4 = c(FN = 1, NN = 0, Ce = 2, So = 1)
+)
+
+# 2️⃣ Function to assign closest station per call based on available units
+build_scenario_ett <- function(data, scenario_name) {
+  units <- scenario_units[[scenario_name]]
+  
+  # Keep track of units availability per station
+  station_queue <- lapply(names(units), function(x) rep(0, units[[x]]))
+  names(station_queue) <- names(units)
+  
+  data <- data %>%
+    arrange(DT.DISP) %>%
+    rowwise() %>%
+    mutate(
+      # Build vector of available stations
+      available_stations = paste(names(units)[units > 0], collapse = ", "),
+      
+      # Get eTT values for available stations only
+      eTT_values = list(c(FN = eTT.BG.FN, NN = eTT.BG.NN, Ce = eTT.BG.Ce, So = eTT.BG.So)[units > 0]),
+      
+      # Pick the station with minimum eTT
+      closest_station = names(which.min(eTT_values)),
+      travel_time_secs = min(eTT_values)
+    ) %>%
+    ungroup()
+  
+  return(data)
+}
+
+# 3️⃣ Generate datasets for each scenario
+ems_S0 <- build_scenario_ett(ems, "S0")
+ems_S1 <- build_scenario_ett(ems, "S1")
+ems_S2 <- build_scenario_ett(ems, "S2")
+ems_S3 <- build_scenario_ett(ems, "S3")
+ems_S4 <- build_scenario_ett(ems, "S4")
+
+```
+
+```{r}
+ems_S1
+```
