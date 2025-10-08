@@ -931,15 +931,15 @@ suppressWarnings({
 ### Residuals + Diagnostics
 
 ```{r}
-plot(fitted(mod_mixed), resid(mod_mixed),
+plot(fitted(mod_lmm), resid(mod_lmm),
      xlab = "Fitted values",
      ylab = "Residuals",
      main = "Residuals vs Fitted")
 abline(h = 0, col = "red")
 
 
-qqnorm(resid(mod_mixed))
-qqline(resid(mod_mixed), col = "red")
+qqnorm(resid(mod_lmm))
+qqline(resid(mod_lmm), col = "red")
 ```
 
 
