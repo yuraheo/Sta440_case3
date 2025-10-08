@@ -20,7 +20,7 @@ library(tidyverse)
 library(lubridate)
 library(janitor)    
 library(scales)
-install.packages("performance")
+library(performance)
 
 ```
 
@@ -29,12 +29,8 @@ install.packages("performance")
 
 load("emsData.RData")
 
-
-
 glimpse(x)
 ems <- x
-
-
 ```
 
 ```{r}
@@ -466,7 +462,7 @@ ems_calls <- ems %>%
 ems_calls
 ```
 
-Extract k-th dispatch/available time per unit & build one vector of dispatch time, one vector of availble times.
+Extract k-th dispatch/available time per unit & build one vector of dispatch time, one vector of available times.
 
 ```{r}
 library(purrr)
@@ -905,6 +901,7 @@ summary(mod_lmm)
 The scenario/station combination with the **largest negative coefficient** (biggest reduction in travel time) identifies **which North station location would better serve the community**.
 
 -   So based on our results, it would be S3 which means moving a central truck up to near north.
+
 ```{r}
 suppressPackageStartupMessages({
   # Only install if missing, no warnings printed
@@ -926,8 +923,6 @@ suppressWarnings({
 })
 ```
 
-
-
 ### Residuals + Diagnostics
 
 ```{r}
@@ -942,4 +937,66 @@ qqnorm(resid(mod_lmm))
 qqline(resid(mod_lmm), col = "red")
 ```
 
+Logistic Model
 
+```{r}
+# Collect assigned stations from all scenario datasets
+assignments <- list(
+  S0 = ems_S0 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station),
+  S1 = ems_S1 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station),
+  S2 = ems_S2 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station),
+  S3 = ems_S3 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station),
+  S4 = ems_S4 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station)
+)
+
+# Combine into a single frame
+assign_df <- reduce(names(assignments), function(df, s) {
+  left_join(df, assignments[[s]] %>% rename(!!paste0("assigned_", s) := assigned_station),
+            by = "call_id")
+}, .init = assignments$S0)
+
+# Check a few rows
+head(assign_df)
+```
+
+```{r}
+assign_df <- assign_df %>%
+  mutate(
+    change_S1 = assigned_S1 != assigned_S0,
+    change_S2 = assigned_S2 != assigned_S0,
+    change_S3 = assigned_S3 != assigned_S0,
+    change_S4 = assigned_S4 != assigned_S0
+  )
+```
+
+```{r}
+assign_long <- assign_df %>%
+  pivot_longer(cols = starts_with("change_"),
+               names_to = "scenario",
+               values_to = "changed") %>%
+  mutate(
+    scenario = str_remove(scenario, "change_"),
+    changed = as.integer(changed)
+  )
+
+head(assign_long)
+```
+
+```{r}
+fit_change <- glm(changed ~ scenario, data = assign_long, family = binomial)
+summary(fit_change)
+```
+
+```{r}
+library(emmeans)
+pred_change <- emmeans(fit_change, ~ scenario, type = "response")
+as.data.frame(pred_change)
+
+ggplot(as.data.frame(pred_change),
+       aes(x = scenario, y = prob*100)) +
+  geom_col(fill = "#2E86AB") +
+  geom_errorbar(aes(ymin = asymp.LCL*100, ymax = asymp.UCL*100), width = 0.2) +
+  labs(title = "Probability of Call Reassignment by Scenario",
+       y = "% Calls Changing Assigned Station", x = "Scenario") +
+  theme_minimal()
+```

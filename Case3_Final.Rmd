@@ -1,0 +1,349 @@
+---
+title: "Sta 440 Case 3"
+author: "Sreya Gnanavel, Yura Heo, Lily Seelig"
+date: "September 2025"
+format: 
+  pdf:
+    documentclass: article
+    fontsize: 11pt
+geometry: margin=1in
+execute: 
+  warning: false
+  message: false
+  echo: false
+---
+
+## Background
+
+The Vance County EMS system currently uses 4 ambulances and two stations, one located in the Southern district and the other three in the Central district. While this configuration adequately serves most of the county, residents in the Northern district often experience longer response times than the other two districts. These delays are particularly concerning for high priority emergency calls, where delayed response times may negatively impact patient outcomes. 
+
+In recent years, call volume and service demand has risen across the county, with especially notable growth in the Northern region. So, to address these disparities, county officials are considering the addition of an additional EMS station in the Northern region. There are two potential sites for this new station, one in the Near North and one in the Far North. The goal of our analysis is to use historical EMS trip data to decide which proposed northern station would be more effective in terms of providing service and improved response times to the Northern region. 
+
+Additionally, the county needs to decide the optimal allocation of its four ambulances across among the existing and proposed stations. There are fives possible scenarios for this: the original allocation with one ambulance in the south and three in the north, moving the ambulance from the South station to the Near North station, moving the ambulance from the South station to the Far North station, moving one ambulance from the Central station to the Near North station, or moving one ambulance from the Central station to the Far North station. 
+
+## Data
+
+Our analysis uses historical data from past Vance County EMS trips. Each row of our data set corresponds to a single trip including information from dispatch to hospital arrival to the point when the ambulance arrives again. While the dataset is based on real operational patterns, dates and identifying details have been modified to protect patient confidentiality. 
+
+Before we started modeling, we conducted some exploratory data analysis to learn more about our data set and decide where to start with modeling. *The figure titled “Fastest station by scenario (eTT)”* shows the distribution of calls across latitude and longitude, color-coded by the station predicted to provide the fastest response under each of the five allocation scenarios. These maps illustrate how coverage patterns change when Near North or Far North stations are added. Under the current configuration (S0), the Central and South stations dominate responses, even for calls located in the Northern district. In scenarios introducing a northern base (S1–S4), the corresponding Near North or Far North station begins to absorb a portion of northern calls, with S3 (Near North) showing the broadest redistribution. This spatial shift highlights how adding a northern facility would balance regional service coverage and reduce Central’s coverage in the North.
+
+*A second figure (“Response time by scenario”)* compares the estimated best-guess travel times across the entire system under each scenario. For every call, the minimum travel time among active stations in that configuration was identified and summarized via boxplots. Scenario S3 yields the lowest median response time and a tighter interquartile range, suggesting more consistent system performance. In contrast, S1 and S2 produce little to no improvement relative to the current setup (S0), while S4 falls between S0 and S3.
+
+Finally, *the district-specific boxplot (“Response times across scenarios by district”)* reveals how improvements vary regionally. The North district shows substantial reductions in median response time when a northern station is added (particularly S3), while Central and South remain largely stable. This shows that the proposed Near North placement offers the greatest equity gain. It shortens response times for previously underserved northern residents without compromising service elsewhere.
+
+## Model Rationale
+
+## Model Implementation and Evaluation
+
+## Results
+
+## Limitations
+
+## Conclusions
+
+## Appendix
+
+```{r}
+#| label: load-libaries 
+
+library(tidyverse)
+library(lubridate)
+library(janitor)    
+library(scales)
+library(performance)
+library(emmeans)
+library(purrr)
+library(stringr)
+library(lme4)
+library(dplyr)
+library(geosphere)
+library(lmerTest)
+
+```
+
+### Data
+
+```{r}
+#| label: load-data
+
+load("emsData.RData")
+ems <- x
+
+ems <- ems %>%
+  mutate(
+    mins_dispatch_to_enroute = as.numeric(timeToEnroute, units = "mins"),
+    mins_enroute_to_arrival  = as.numeric(observedTT, units = "mins"),
+    mins_dispatch_to_arrival = as.numeric(difftime(DT.ARRIVE, DT.DISP, units = "mins")),
+    mins_on_scene            = as.numeric(onSceneDur, units = "mins"),
+    mins_to_hospital         = as.numeric(toHospitalTT, units = "mins"),
+    mins_turnaround          = as.numeric(difftime(DT.AVAILABLE, DT.ARVREC, units = "mins")),
+    
+    call_date = as_date(DT.DISP),
+    dow       = wday(DT.DISP, label = TRUE, abbr = TRUE),
+    hour      = hour(DT.DISP)
+  )
+```
+
+```{r}
+#| label: add scenario
+
+# pmin: minimum travel time across the stafed stations 
+
+ems <- ems %>%
+  mutate(
+    # S0 (Current: 3 Central, 1 South)
+    resp_S0 = pmin(eTT.BG.Ce, eTT.BG.So, na.rm = TRUE),
+
+    # S1 (3 Central, 1 Near North)
+    resp_S1 = pmin(eTT.BG.Ce, eTT.BG.NN, na.rm = TRUE),
+
+    # S2 (3 Central, 1 Far North)
+    resp_S2 = pmin(eTT.BG.Ce, eTT.BG.FN, na.rm = TRUE),
+
+    # S3 (2 Central, 1 South, 1 Near North)
+    resp_S3 = pmin(eTT.BG.Ce, eTT.BG.So, eTT.BG.NN, na.rm = TRUE),
+
+    # S4 (2 Central, 1 South, 1 Far North)
+    resp_S4 = pmin(eTT.BG.Ce, eTT.BG.So, eTT.BG.FN, na.rm = TRUE)
+  )
+```
+
+### EDA
+
+```{r}
+#| label: EDA
+
+# Response Times By Scenarios Boxplot
+ems %>%
+  pivot_longer(starts_with("resp_S"), names_to = "scenario", values_to = "resp_time") %>%
+  mutate(resp_time_min = resp_time / 60) %>%
+  ggplot(aes(scenario, resp_time_min, fill = scenario)) +
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0, 20)) +   # 1000 sec ≈ 16.7 min
+  labs(title = "Response time by scenario",
+       x = "Scenario", y = "Estimated response time (minutes)") +
+  theme(legend.position = "none")
+
+# Pivot Dataset Longer
+ems_long <- ems %>%
+  select(REF.GRID, starts_with("resp_S")) %>%
+  pivot_longer(cols = starts_with("resp_S"), 
+               names_to = "Scenario", values_to = "RespTime") %>%
+  mutate(
+    Scenario = gsub("resp_", "", Scenario),   # cleaner scenario names
+    RespTime_min = RespTime / 60
+  )
+
+# Response Times by scenario by district boxplots
+ggplot(ems_long, aes(x = Scenario, y = RespTime_min, fill = Scenario)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  facet_wrap(~REF.GRID, scales = "free_y") +
+  geom_hline(yintercept=8, linetype="dashed", color="red") +
+  labs(title="Response Times Across Scenarios by District",
+       subtitle="Dashed red line = 8-minute benchmark",
+       x="Scenario", y="Response Time (minutes)") +
+  theme_minimal() +
+  theme(legend.position="none",
+        strip.text = element_text(size=12, face="bold"))
+
+# Fastest Station By Scenario Maps
+
+station_names <- c(
+  "eTT.BG.Ce" = "Central",
+  "eTT.BG.So" = "South",
+  "eTT.BG.NN" = "Near North",
+  "eTT.BG.FN" = "Far North"
+)
+
+station_palette <- c(
+  "Central"    = "#1f77b4",
+  "South"      = "#ff7f0e",
+  "Near North" = "#2ca02c",
+  "Far North"  = "#d62728"
+)
+
+scenario_sets <- list(
+  S0 = c("eTT.BG.Ce", "eTT.BG.So"),                      # 3 Central, 1 South
+  S1 = c("eTT.BG.Ce", "eTT.BG.NN"),                      # 3 Central, 1 Near North
+  S2 = c("eTT.BG.Ce", "eTT.BG.FN"),                      # 3 Central, 1 Far North
+  S3 = c("eTT.BG.Ce", "eTT.BG.So", "eTT.BG.NN"),         # 2 Central, 1 South, 1 Near North
+  S4 = c("eTT.BG.Ce", "eTT.BG.So", "eTT.BG.FN")          # 2 Central, 1 South, 1 Far North
+)
+
+# Ensure we have an ID per call
+ems <- ems %>% mutate(call_id = row_number())
+
+winners <- map_dfr(names(scenario_sets), function(scn) {
+  cols <- scenario_sets[[scn]]
+
+  ems %>%
+    select(call_id, REF.GPS.LAT, REF.GPS.LON, all_of(cols)) %>%
+    rowwise() %>%
+    mutate(
+      scenario = scn,
+      # scalar min across the active columns (treat NAs as Inf so they can't "win")
+      resp_sec = min(replace_na(c_across(all_of(cols)), Inf)),
+      # find index of the minimum and map to station label
+      fastest  = station_names[ cols[ which.min(replace_na(c_across(all_of(cols)), Inf)) ] ]
+    ) %>%
+    ungroup() %>%
+    select(call_id, REF.GPS.LAT, REF.GPS.LON, scenario, fastest, resp_sec)
+})
+ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
+  geom_point(alpha = 0.55, size = 1.4) +
+  scale_color_manual(values = station_palette, name = "Fastest station") +
+  coord_quickmap() +
+  facet_wrap(~ scenario, ncol = 3) +
+  labs(
+    title = "Fastest station by scenario  (eTT)",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
+
+
+```
+
+### Modeling
+
+Mixed Model:
+
+```{r}
+# 1️⃣ Define number of units per scenario
+scenario_units <- list(
+  S0 = c(FN = 0, NN = 0, Ce = 3, So = 1),
+  S1 = c(FN = 0, NN = 1, Ce = 3, So = 0),
+  S2 = c(FN = 1, NN = 0, Ce = 3, So = 0),
+  S3 = c(FN = 0, NN = 1, Ce = 2, So = 1),
+  S4 = c(FN = 1, NN = 0, Ce = 2, So = 1)
+)
+
+# 2️⃣ Function to assign calls considering unit availability
+build_scenario_units <- function(data, scenario_name) {
+  units <- scenario_units[[scenario_name]]
+  
+  # sort by dispatch time
+   data <- data[order(data$DT.DISP), ]
+  rownames(data) <- NULL
+
+  
+  # Initialize unit queues for each station
+  station_queue <- lapply(units, function(n) rep(as.POSIXct("1970-01-01", tz = "UTC"), n))
+  
+  # Available stations for this scenario
+  available_stations_vec <- names(units)[units > 0]
+  
+  # Prepare results storage
+  assigned_station_vec    <- character(nrow(data))
+  travel_time_vec         <- numeric(nrow(data))
+  wait_time_vec           <- numeric(nrow(data))
+  effective_response_vec  <- numeric(nrow(data))
+
+  
+  for (i in 1:nrow(data)) {
+   call_time <- data$DT.DISP[i]  
+    
+    # eTT values for available stations only
+    eTTs_all <- c(
+      FN = data$eTT.BG.FN[i],
+      NN = data$eTT.BG.NN[i],
+      Ce = data$eTT.BG.Ce[i],
+      So = data$eTT.BG.So[i]
+    )
+    eTTs <- eTTs_all[available_stations_vec]
+
+    
+    # Next free time for each station
+    station_next_free <- sapply(available_stations_vec, function(st) min(station_queue[[st]]))
+    
+    # Wait time in seconds
+    wait_secs <- pmax(0, as.numeric(difftime(station_next_free, call_time, units = "secs")))
+    
+    # Effective response = travel + wait
+    effective_response <- eTTs + wait_secs
+    
+    # Pick station with minimum effective_response
+    chosen_station <- names(which.min(effective_response))
+     assigned_station_vec[i]   <- chosen_station
+    travel_time_vec[i] <- eTTs[chosen_station]
+    wait_time_vec[i] <- wait_secs[chosen_station]
+    effective_response_vec[i] <- effective_response[chosen_station]
+    
+    # Update the unit's next free time
+    service_secs <- as.numeric(difftime(data$DT.AVAILABLE[i], data$DT.DISP[i], units = "secs"))
+    unit_idx <- which.min(station_queue[[chosen_station]])
+    station_queue[[chosen_station]][unit_idx] <- call_time + service_secs
+  }
+  
+  # Add results to dataset
+  data <- dplyr::mutate(
+    data,
+    available_stations      = paste(available_stations_vec, collapse = ", "),
+    assigned_station        = assigned_station_vec,    
+    travel_time_secs        = travel_time_vec,
+    wait_time_secs          = wait_time_vec,
+    effective_response_time = effective_response_vec
+  )
+  
+  return(data)
+}
+
+
+# 3️⃣ Build scenario datasets
+ems_S0 <- build_scenario_units(ems, "S0")
+ems_S1 <- build_scenario_units(ems, "S1")
+ems_S2 <- build_scenario_units(ems, "S2")
+ems_S3 <- build_scenario_units(ems, "S3")
+ems_S4 <- build_scenario_units(ems, "S4")
+```
+
+Convert to one data set for LMM
+
+```{r}
+# Convert scenario to factor
+ems_long <- ems %>%
+  bind_rows(
+    ems_S0 %>% mutate(scenario = "S0"),
+    ems_S1 %>% mutate(scenario = "S1"),
+    ems_S2 %>% mutate(scenario = "S2"),
+    ems_S3 %>% mutate(scenario = "S3"),
+    ems_S4 %>% mutate(scenario = "S4")
+  )
+# set S0 as the reference level
+
+ems_long <- ems_long %>%
+  mutate(
+    scenario = factor(scenario, levels = c("S0","S1","S2","S3","S4")),  
+    eff_time_sec = as.numeric(effective_response_time),
+    eff_time_sec = ifelse(is.finite(eff_time_sec), eff_time_sec, NA_real_),
+    eff_time_sec = ifelse(eff_time_sec <= 0, NA_real_, eff_time_sec),
+    log_eff_time = log(eff_time_sec)
+  ) %>%
+  filter(!is.na(log_eff_time), !is.na(assigned_station))
+
+# Mixed effects model: travel_time ~ scenario + (1 | assigned_station)
+# Here, assigned_station is a random intercept
+mod_lmm <- lmer(
+  log_eff_time ~ scenario + (1 | assigned_station),
+  data = ems_long, REML = TRUE
+)
+summary(mod_lmm)
+```
+
+The scenario/station combination with the **largest negative coefficient** (biggest reduction in travel time) identifies **which North station location would better serve the community**.
+
+-   So based on our results, it would be S3 which means moving a central truck up to near north.
+
+#### Residuals + Diagnostics
+
+```{r}
+plot(fitted(mod_lmm), resid(mod_lmm),
+     xlab = "Fitted values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted")
+abline(h = 0, col = "red")
+
+
+qqnorm(resid(mod_lmm))
+qqline(resid(mod_lmm), col = "red")
+```
