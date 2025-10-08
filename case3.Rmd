@@ -787,6 +787,11 @@ scenario_units <- list(
 build_scenario_units <- function(data, scenario_name) {
   units <- scenario_units[[scenario_name]]
   
+  # sort by dispatch time
+   data <- data[order(data$DT.DISP), ]
+  rownames(data) <- NULL
+
+  
   # Initialize unit queues for each station
   station_queue <- lapply(units, function(n) rep(as.POSIXct("1970-01-01", tz = "UTC"), n))
   
@@ -794,21 +799,24 @@ build_scenario_units <- function(data, scenario_name) {
   available_stations_vec <- names(units)[units > 0]
   
   # Prepare results storage
-  closest_station_vec <- character(nrow(data))
-  travel_time_vec <- numeric(nrow(data))
-  wait_time_vec <- numeric(nrow(data))
-  effective_response_vec <- numeric(nrow(data))
+  assigned_station_vec    <- character(nrow(data))
+  travel_time_vec         <- numeric(nrow(data))
+  wait_time_vec           <- numeric(nrow(data))
+  effective_response_vec  <- numeric(nrow(data))
+
   
   for (i in 1:nrow(data)) {
-    call_time <- as.POSIXct(data$DT.DISP[i], tz = "UTC")
+   call_time <- data$DT.DISP[i]  
     
     # eTT values for available stations only
-    eTTs <- c(FN = data$eTT.BG.FN[i],
-              NN = data$eTT.BG.NN[i],
-              Ce = data$eTT.BG.Ce[i],
-              So = data$eTT.BG.So[i])
-    
-    eTTs <- eTTs[available_stations_vec]
+    eTTs_all <- c(
+      FN = data$eTT.BG.FN[i],
+      NN = data$eTT.BG.NN[i],
+      Ce = data$eTT.BG.Ce[i],
+      So = data$eTT.BG.So[i]
+    )
+    eTTs <- eTTs_all[available_stations_vec]
+
     
     # Next free time for each station
     station_next_free <- sapply(available_stations_vec, function(st) min(station_queue[[st]]))
@@ -821,7 +829,7 @@ build_scenario_units <- function(data, scenario_name) {
     
     # Pick station with minimum effective_response
     chosen_station <- names(which.min(effective_response))
-    closest_station_vec[i] <- chosen_station
+     assigned_station_vec[i]   <- chosen_station
     travel_time_vec[i] <- eTTs[chosen_station]
     wait_time_vec[i] <- wait_secs[chosen_station]
     effective_response_vec[i] <- effective_response[chosen_station]
@@ -833,14 +841,14 @@ build_scenario_units <- function(data, scenario_name) {
   }
   
   # Add results to dataset
-  data <- data %>%
-    mutate(
-      available_stations = paste(available_stations_vec, collapse = ", "),
-      closest_station = closest_station_vec,
-      travel_time_secs = travel_time_vec,
-      wait_time_secs = wait_time_vec,
-      effective_response_time = effective_response_vec
-    )
+  data <- dplyr::mutate(
+    data,
+    available_stations      = paste(available_stations_vec, collapse = ", "),
+    assigned_station        = assigned_station_vec,    
+    travel_time_secs        = travel_time_vec,
+    wait_time_secs          = wait_time_vec,
+    effective_response_time = effective_response_vec
+  )
   
   return(data)
 }
@@ -855,7 +863,7 @@ ems_S4 <- build_scenario_units(ems, "S4")
 ```
 
 ```{r}
-#ems_S1
+ems_S1
 ```
 
 ### Convert to one dataset for LMM
@@ -872,20 +880,53 @@ ems_long <- ems %>%
     ems_S3 %>% mutate(scenario = "S3"),
     ems_S4 %>% mutate(scenario = "S4")
   )
+# set S0 as the reference level
 
-ems_long$scenario <- factor(ems_long$scenario)
+ems_long <- ems_long %>%
+  mutate(
+    scenario = factor(scenario, levels = c("S0","S1","S2","S3","S4")),  
+    eff_time_sec = as.numeric(effective_response_time),
+    eff_time_sec = ifelse(is.finite(eff_time_sec), eff_time_sec, NA_real_),
+    eff_time_sec = ifelse(eff_time_sec <= 0, NA_real_, eff_time_sec),
+    log_eff_time = log(eff_time_sec)
+  ) %>%
+  filter(!is.na(log_eff_time), !is.na(assigned_station))
 
-# Mixed effects model: travel_time ~ scenario + (1 | closest_station)
-# Here, closest_station is a random intercept
-mod_mixed <- lmer(travel_time_secs ~ scenario + (1 | closest_station), data = ems_long)
-
-summary(mod_mixed)
+# Mixed effects model: travel_time ~ scenario + (1 | assigned_station)
+# Here, assigned_station is a random intercept
+mod_lmm <- lmer(
+  log_eff_time ~ scenario + (1 | assigned_station),
+  data = ems_long, REML = TRUE
+)
+summary(mod_lmm)
 
 ```
 
 The scenario/station combination with the **largest negative coefficient** (biggest reduction in travel time) identifies **which North station location would better serve the community**.
 
 -   So based on our results, it would be S3 which means moving a central truck up to near north.
+```{r}
+suppressPackageStartupMessages({
+  # Only install if missing, no warnings printed
+  if (!requireNamespace("pbkrtest", quietly = TRUE)) {
+    install.packages("pbkrtest")
+  }
+  if (!requireNamespace("lmerTest", quietly = TRUE)) {
+    install.packages("lmerTest")
+  }
+  library(emmeans)
+  library(lmerTest)
+})
+
+# Run contrasts quietly (suppress intermediate warnings about pbkrtest/lmerTest)
+suppressWarnings({
+  em <- emmeans(mod_lmm, ~ scenario)
+  contrast(em, method = "trt.vs.ctrl", ref = "S0") %>%
+    summary(type = "response")
+})
+```
+
+
 
 ### Residuals + Diagnostics
 
@@ -901,39 +942,4 @@ qqnorm(resid(mod_mixed))
 qqline(resid(mod_mixed), col = "red")
 ```
 
-### Logistic Regression?
 
-```{# {r}
-# ems_long <- bind_rows(
-#   ems_S0 %>% mutate(scenario = "S0"),
-#   ems_S1 %>% mutate(scenario = "S1"),
-#   ems_S2 %>% mutate(scenario = "S2"),
-#   ems_S3 %>% mutate(scenario = "S3"),
-#   ems_S4 %>% mutate(scenario = "S4")
-# )
-# ems_long <- ems_long %>%
-#   group_by(call_id) %>%
-#   mutate(travel_varies = travel_time_secs != first(travel_time_secs)) %>%
-#   ungroup()
-# mod_logit <- glm(travel_varies ~ REF.GRID + DISPATCH.PRIORITY.NAME + hour,
-#                  data = ems_long,
-#                  family = binomial)
-# 
-# ems_long <- ems_long %>%
-#   mutate(prob_varies = predict(mod_logit, type = "response"))
-# 
-# # Confirm column exists
-# head(ems_long$prob_varies)
-# allocation_summary <- ems_long %>%
-#   group_by(REF.GRID) %>%
-#   summarize(
-#     avg_pred_travel = mean(pred_travel, na.rm = TRUE),
-#     avg_prob_varies = mean(prob_varies, na.rm = TRUE),
-#     .groups = "drop"
-#   ) %>%
-#   arrange(desc(avg_prob_varies))
-# 
-# allocation_summary
-
-
-```
