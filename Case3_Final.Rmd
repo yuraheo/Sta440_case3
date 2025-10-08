@@ -58,6 +58,9 @@ library(lme4)
 library(dplyr)
 library(geosphere)
 library(lmerTest)
+library(DHARMa)
+library(glmmTMB)
+
 
 ```
 
@@ -334,7 +337,7 @@ The scenario/station combination with the **largest negative coefficient** (bigg
 
 -   So based on our results, it would be S3 which means moving a central truck up to near north.
 
-* lmm2: add natural cubic spline for a nonlinear time-of-day effect (slower response during rush hour, faster overnight)
+-   lmm2: add natural cubic spline for a nonlinear time-of-day effect (slower response during rush hour, faster overnight)
 
 ```{r}
 # lmm2: add missing structure
@@ -347,8 +350,6 @@ mod_lmm_spline <- lmer(
 )
 summary(mod_lmm_spline)
 ```
-
-
 
 #### Residuals + Diagnostics
 
@@ -365,6 +366,7 @@ qqline(resid(mod_lmm), col = "red")
 ```
 
 QQ plot with spline
+
 ```{r}
 plot(fitted(mod_lmm_spline), resid(mod_lmm_spline),
      xlab="Fitted values", ylab="Residuals", main="Residuals vs Fitted")
@@ -374,15 +376,9 @@ qqnorm(resid(mod_lmm_spline))
 qqline(resid(mod_lmm_spline), col="red")
 
 ```
-```{r}
-if (!requireNamespace("glmmTMB", quietly = TRUE)) {
-    install.packages("glmmTMB")
-}
 
-if (!requireNamespace("DHARMa", quietly = TRUE)) {
-    install.packages("DHARMa")
-  }
-library(glmmTMB)
+```{r}
+
 
 mod_final <- glmmTMB(
   eff_time_sec ~ scenario + ns(hour, df = 4) + (1 | call_id),
@@ -393,10 +389,8 @@ mod_final <- glmmTMB(
 summary(mod_final)
 
 # Model check
-library(DHARMa)
 plot(simulateResiduals(mod_final, n = 1000))
 ```
-
 
 Logistic Model
 
