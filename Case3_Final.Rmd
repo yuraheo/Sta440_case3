@@ -206,7 +206,7 @@ ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
 
 ### Modeling
 
-Mixed Model:
+Linear Mixed Model:
 
 ```{r}
 # 1️⃣ Define number of units per scenario
@@ -321,10 +321,10 @@ ems_long <- ems_long %>%
   ) %>%
   filter(!is.na(log_eff_time), !is.na(assigned_station))
 
-# Mixed effects model: travel_time ~ scenario + (1 | assigned_station)
+# Mixed effects model: travel_time ~ scenario + (1 |call_id)
 # Here, assigned_station is a random intercept
 mod_lmm <- lmer(
-  log_eff_time ~ scenario + (1 | assigned_station),
+  log_eff_time ~ scenario + (1 | call_id),
   data = ems_long, REML = TRUE
 )
 summary(mod_lmm)
@@ -333,6 +333,22 @@ summary(mod_lmm)
 The scenario/station combination with the **largest negative coefficient** (biggest reduction in travel time) identifies **which North station location would better serve the community**.
 
 -   So based on our results, it would be S3 which means moving a central truck up to near north.
+
+* lmm2: add natural cubic spline for a nonlinear time-of-day effect (slower response during rush hour, faster overnight)
+
+```{r}
+# lmm2: add missing structure
+library(splines)
+
+mod_lmm_spline <- lmer(
+  log_eff_time ~ scenario + ns(hour, df = 4) + (1 | call_id),
+  data = ems_long,
+  REML = TRUE
+)
+summary(mod_lmm_spline)
+```
+
+
 
 #### Residuals + Diagnostics
 
@@ -347,6 +363,40 @@ abline(h = 0, col = "red")
 qqnorm(resid(mod_lmm))
 qqline(resid(mod_lmm), col = "red")
 ```
+
+QQ plot with spline
+```{r}
+plot(fitted(mod_lmm_spline), resid(mod_lmm_spline),
+     xlab="Fitted values", ylab="Residuals", main="Residuals vs Fitted")
+abline(h=0, col="red")
+
+qqnorm(resid(mod_lmm_spline))
+qqline(resid(mod_lmm_spline), col="red")
+
+```
+```{r}
+if (!requireNamespace("glmmTMB", quietly = TRUE)) {
+    install.packages("glmmTMB")
+}
+
+if (!requireNamespace("DHARMa", quietly = TRUE)) {
+    install.packages("DHARMa")
+  }
+library(glmmTMB)
+
+mod_final <- glmmTMB(
+  eff_time_sec ~ scenario + ns(hour, df = 4) + (1 | call_id),
+  data = ems_long,
+  family = Gamma(link = "log")
+)
+
+summary(mod_final)
+
+# Model check
+library(DHARMa)
+plot(simulateResiduals(mod_final, n = 1000))
+```
+
 
 Logistic Model
 
