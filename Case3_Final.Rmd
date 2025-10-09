@@ -43,6 +43,13 @@ Finally, to complement our time based models, we fit a logistic regression model
 
 ## Model Implementation and Evaluation
 
+First, we simulated system performance under the five configurations to evaluate each allocation scenario. For each call, we identified which station would respond under each scenario based on the minimum effective response time, the sum of estimated travel time and the unit’s waiting time before becoming available. We generated a dataset for each scenario using a queue based function which first sorted calls by dispatch time, then assigned an available ambulance to each call using travel and wait times, then updated the next available time for each unit, and finally recorded the total effective response time for each trip under the given scenario. These datasets were combined into a single long format data frame that we used for our models. 
+
+First, we implemented our Linear Mixed Effects Model (LMM). We fit this model using the lmer() function with log transformed response time as the dependent variable. We used call ID as the random intercept to account for unobserved heterogeneity across calls. Then, we implemented our Gamma GLMM using the glmmTMB() function. Finally, we implemented a binomial logistic model using the glm() function with the family set to binomial.
+
+\
+ADD EVALUATION
+
 ## Results
 
 ## Limitations
