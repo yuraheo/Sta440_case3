@@ -25,11 +25,11 @@ Additionally, the county needs to decide the optimal allocation of its four ambu
 
 Our analysis uses historical data from past Vance County EMS trips. Each row of our data set corresponds to a single trip including information from dispatch to hospital arrival to the point when the ambulance arrives again. While the data set is based on real operational patterns, dates and identifying details have been modified to protect patient confidentiality. 
 
-Before we started modeling, we conducted some exploratory data analysis to learn more about our data set and decide where to start with modeling. *The figure titled “Fastest station by scenario (eTT)”* shows the distribution of calls across latitude and longitude, color-coded by the station predicted to provide the fastest response under each of the five allocation scenarios. These maps illustrate how coverage patterns change when Near North or Far North stations are added. Under the current configuration (S0), the Central and South stations dominate responses, even for calls located in the Northern district. In scenarios introducing a northern base (S1–S4), the corresponding Near North or Far North station begins to absorb a portion of northern calls, with S3 (Near North) showing the broadest redistribution. This spatial shift highlights how adding a northern facility would balance regional service coverage and reduce Central’s coverage in the North.
+Before we started modeling, we conducted some exploratory data analysis to learn more about our data set and decide where to start with modeling. Figure 3 shows the distribution of calls across latitude and longitude, color-coded by the station predicted to provide the fastest response under each of the five allocation scenarios. These maps illustrate how coverage patterns change when Near North or Far North stations are added. Under the current configuration (S0), the Central and South stations dominate responses, even for calls located in the Northern district. In scenarios introducing a northern base (S1–S4), the corresponding Near North or Far North station begins to absorb a portion of northern calls, with S3 (Near North) showing the broadest redistribution. This spatial shift highlights how adding a northern facility would balance regional service coverage and reduce Central’s coverage in the North.
 
-*A second figure (“Response time by scenario”)* compares the estimated best-guess travel times across the entire system under each scenario. For every call, the minimum travel time among active stations in that configuration was identified and summarized via boxplots. Scenario S3 yields the lowest median response time and a tighter interquartile range, suggesting more consistent system performance. In contrast, S1 and S2 produce little to no improvement relative to the current setup (S0), while S4 falls between S0 and S3.
+Figure 1 compares the estimated best-guess travel times across the entire system under each scenario. For every call, the minimum travel time among active stations in that configuration was identified and summarized via boxplots. Scenario S3 yields the lowest median response time and a tighter interquartile range, suggesting more consistent system performance. In contrast, S1 and S2 produce little to no improvement relative to the current setup (S0), while S4 falls between S0 and S3.
 
-Finally, *the district-specific boxplot (“Response times across scenarios by district”)* reveals how improvements vary regionally. The North district shows substantial reductions in median response time when a northern station is added (particularly S3), while Central and South remain largely stable. This shows that the proposed Near North placement offers the greatest equity gain. It shortens response times for previously underserved northern residents without compromising service elsewhere.
+Finally, Figure 2 reveals how improvements vary regionally. The North district shows substantial reductions in median response time when a northern station is added (particularly S3), while Central and South remain largely stable. This shows that the proposed Near North placement offers the greatest equity gain. It shortens response times for previously underserved northern residents without compromising service elsewhere.
 
 ## Model Rationale
 
@@ -75,6 +75,7 @@ library(geosphere)
 library(lmerTest)
 library(DHARMa)
 library(glmmTMB)
+library(knitr)
 
 
 ```
@@ -126,6 +127,28 @@ ems <- ems %>%
   )
 ```
 
+### Scenario Table
+
+```{r}
+# Create the data frame
+scenario_table <- data.frame(
+  Station = c("Far North", "Near North", "Central", "South"),
+  S0 = c(0, 0, 3, 1),
+  S1 = c(0, 1, 3, 0),
+  S2 = c(1, 0, 3, 0),
+  S3 = c(0, 1, 2, 1),
+  S4 = c(1, 0, 2, 1)
+)
+
+# Display as a nicely formatted table
+kable(
+  scenario_table,
+  caption = "Table 1: Ambulance allocation under each scenario",
+  align = "lccccc",
+  booktabs = TRUE
+)
+```
+
 ### EDA
 
 ```{r}
@@ -138,7 +161,7 @@ ems %>%
   ggplot(aes(scenario, resp_time_min, fill = scenario)) +
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim = c(0, 20)) +   # 1000 sec ≈ 16.7 min
-  labs(title = "Response time by scenario",
+  labs(title = "Figure 1: Response time by scenario",
        x = "Scenario", y = "Estimated response time (minutes)") +
   theme(legend.position = "none")
 
@@ -157,7 +180,7 @@ ggplot(ems_long, aes(x = Scenario, y = RespTime_min, fill = Scenario)) +
   geom_boxplot(outlier.alpha = 0.2) +
   facet_wrap(~REF.GRID, scales = "free_y") +
   geom_hline(yintercept=8, linetype="dashed", color="red") +
-  labs(title="Response Times Across Scenarios by District",
+  labs(title="Figure 2: Response Times Across Scenarios by District",
        subtitle="Dashed red line = 8-minute benchmark",
        x="Scenario", y="Response Time (minutes)") +
   theme_minimal() +
@@ -213,7 +236,7 @@ ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
   coord_quickmap() +
   facet_wrap(~ scenario, ncol = 3) +
   labs(
-    title = "Fastest station by scenario  (eTT)",
+    title = "Figure 3: Fastest station by scenario (eTT)",
     x = "Longitude", y = "Latitude"
   ) +
   theme_bw(base_size = 12) +
