@@ -23,7 +23,7 @@ Additionally, the county needs to decide the optimal allocation of its four ambu
 
 ## Data
 
-Our analysis uses historical data from past Vance County EMS trips. Each row of our data set corresponds to a single trip including information from dispatch to hospital arrival to the point when the ambulance arrives again. While the dataset is based on real operational patterns, dates and identifying details have been modified to protect patient confidentiality. 
+Our analysis uses historical data from past Vance County EMS trips. Each row of our data set corresponds to a single trip including information from dispatch to hospital arrival to the point when the ambulance arrives again. While the data set is based on real operational patterns, dates and identifying details have been modified to protect patient confidentiality. 
 
 Before we started modeling, we conducted some exploratory data analysis to learn more about our data set and decide where to start with modeling. *The figure titled “Fastest station by scenario (eTT)”* shows the distribution of calls across latitude and longitude, color-coded by the station predicted to provide the fastest response under each of the five allocation scenarios. These maps illustrate how coverage patterns change when Near North or Far North stations are added. Under the current configuration (S0), the Central and South stations dominate responses, even for calls located in the Northern district. In scenarios introducing a northern base (S1–S4), the corresponding Near North or Far North station begins to absorb a portion of northern calls, with S3 (Near North) showing the broadest redistribution. This spatial shift highlights how adding a northern facility would balance regional service coverage and reduce Central’s coverage in the North.
 
@@ -32,6 +32,14 @@ Before we started modeling, we conducted some exploratory data analysis to learn
 Finally, *the district-specific boxplot (“Response times across scenarios by district”)* reveals how improvements vary regionally. The North district shows substantial reductions in median response time when a northern station is added (particularly S3), while Central and South remain largely stable. This shows that the proposed Near North placement offers the greatest equity gain. It shortens response times for previously underserved northern residents without compromising service elsewhere.
 
 ## Model Rationale
+
+To evaluate the effect of station allocation on EMS performance, we modeled the effective response time, the sum of travel and waiting time, as a function of the scenario configuration. Because each call differs in location, dispatch time, and other factors, we decided a mixed effects modeling framework was best to look at both systematic differences across scenarios and random variations. 
+
+First, we implemented a linear mixed effects model using the log of effective response time as the outcome. We applied a log transformation to stabilize the variance and reduce the influence of extreme response times. This model includes scenario as a fixed effect and call ID as a random intercept to account for repeated structure and inherent variability between calls. Overall, this allows us to estimate how each proposed scenario differs from the current configuration (scenario 0) while controlling for random differences between calls. The LMM provides an interpretable baseline and straightforward comparison of expected log response times across all scenarios. 
+
+While the LMM assumes normally distributed residuals, response time data is inherently positive and right skewed. So, to better reflect this distribution, we refit the model using a Gamma GLMM with a log link. Overall, this model preserves the non-negativity of response times and provides a more realistic representation of variability in emergency response performance. We also used a natural cubic spline for hour of the day to capture nonlinear patterns that are associated with traffic and call volume. 
+
+Finally, to complement our time based models, we fit a logistic regression model estimating the probability that the call would be assigned to a different base under each scenario compared to the current system. This model quantifies potential operational disruption, identifying which configurations maintain the most stable dispatch patterns. 
 
 ## Model Implementation and Evaluation
 
