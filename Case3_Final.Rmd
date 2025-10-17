@@ -33,19 +33,21 @@ Finally, Figure 2 reveals how improvements vary regionally. The North district s
 
 ## Model Rationale
 
-To evaluate the effect of station allocation on EMS performance, we modeled the effective response time, the sum of travel and waiting time, as a function of the scenario configuration. Because each call differs in location, dispatch time, and other factors, we decided a mixed effects modeling framework was best to look at both systematic differences across scenarios and random variations. 
+To evaluate the effect of station allocation on EMS performance, we modeled the effective response time, the sum of travel and waiting time, as a function of the scenario configuration. Because each call differs in location, dispatch time, and other factors, we decided a mixed effects modeling framework was best to look at both systematic differences across scenarios and random variations.
 
-First, we implemented a linear mixed effects model using the log of effective response time as the outcome. We applied a log transformation to stabilize the variance and reduce the influence of extreme response times. This model includes scenario as a fixed effect and call ID as a random intercept to account for repeated structure and inherent variability between calls. Overall, this allows us to estimate how each proposed scenario differs from the current configuration (scenario 0) while controlling for random differences between calls. The LMM provides an interpretable baseline and straightforward comparison of expected log response times across all scenarios. 
+First, we implemented a linear mixed effects model using the log of effective response time as the outcome. We applied a log transformation to stabilize the variance and reduce the influence of extreme response times. This model includes scenario as a fixed effect and call ID as a random intercept to account for repeated structure and inherent variability between calls. Overall, this allows us to estimate how each proposed scenario differs from the current configuration (scenario 0) while controlling for random differences between calls. The LMM provides an interpretable baseline and straightforward comparison of expected log response times across all scenarios.
 
-Finally, to complement our time based models, we fit a logistic regression model estimating the probability that the call would be assigned to a different base under each scenario compared to the current system. This model quantifies potential operational disruption, identifying which configurations maintain the most stable dispatch patterns. 
+Finally, to complement our time based models, we fit a logistic regression model estimating the probability that the call would be assigned to a different base under each scenario compared to the current system. This model quantifies potential operational disruption, identifying which configurations maintain the most stable dispatch patterns.
 
 ## Model Implementation and Evaluation
 
-First, we simulated system performance under the five configurations to evaluate each allocation scenario. For each call, we identified which station would respond under each scenario based on the minimum effective response time, the sum of estimated travel time and the unit’s waiting time before becoming available. We generated a dataset for each scenario using a queue based function which first sorted calls by dispatch time, then assigned an available ambulance to each call using travel and wait times, then updated the next available time for each unit, and finally recorded the total effective response time for each trip under the given scenario. These datasets were combined into a single long format data frame that we used for our models. 
+First, we simulated system performance under the five configurations to evaluate each allocation scenario. For each call, we identified which station would respond under each scenario based on the minimum effective response time, the sum of estimated travel time and the unit’s waiting time before becoming available. We generated a dataset for each scenario using a queue based function which first sorted calls by dispatch time, then assigned an available ambulance to each call using travel and wait times, then updated the next available time for each unit, and finally recorded the total effective response time for each trip under the given scenario. These datasets were combined into a single long format data frame that we used for our models.
 
 First, we implemented our Linear Mixed Effects Model (LMM). We fit this model using the lmer() function with log transformed response time as the dependent variable. We used call ID as the random intercept to account for unobserved heterogeneity across calls. 
 
 The model diagnostics and goodness‑of‑fit results show that the mixed‑effects model fits the data reasonably well. The AIC (1286.5) and BIC (1318.8) values are both lower than in earlier model runs, which indicates that this version provides a better overall fit (Table 4). The marginal R² of about 0.05 means the station scenario itself explains around 5% of the variation in the log of response times, while the conditional R² of roughly 0.35 shows that the full model—including call‑specific random effects—accounts for about a third of the total variability (Table 4). The intraclass correlation coefficient (ICC ≈ 0.32) suggests that nearly one‑third of the variation in response time comes from consistent differences between calls, which supports keeping the random intercept for call_id in the model. Overall, these results suggest that the model does a good job of capturing key patterns in the data, the scenario effects aren’t huge, but they’re meaningful.
+
+The residuals‑versus‑fitted plot shows that the residuals are roughly centered around zero across the range of fitted values, with no strong pattern or funnel shape (Figure 4). This suggests that the model assumptions of linearity and constant variance are reasonable. The normal Q–Q plot indicates that the residuals follow an approximately normal distribution, as most points fall along the reference line with only minor deviations in the tails (Figure 5).
 
 ## Results
 
@@ -55,7 +57,7 @@ To answer the two research questions of which north station and which scenario w
 
 ## Limitations and Conclusion
 
-While the mixed‑effects model and simulation framework provided clear insights into how station allocation impacts EMS response times, there are still some limitations. First, the analysis relied on simulated dispatch and travel times based on historical patterns rather than real‑time routing or current traffic data. This means the estimated travel and service durations may not perfectly reflect current field conditions. Second, the model used a relatively simple random‑intercept structure with each call treated as independent, which does not explicitly capture other dependencies such as concurrent calls or time‑of‑day effects. A more detailed model could incorporate random slopes, or spatial correlation to better account for clustering in demand. Future work should explore integrating real GPS‑based travel times, testing alternative optimization methods for vehicle placement, and validating results against observed response data once the new station is operational.
+While the mixed‑effects model and simulation framework provided clear insights into how station allocation impacts EMS response times, there are still some limitations. First, the analysis relied on simulated dispatch and travel times based on historical patterns rather than real‑time routing or current traffic data. This means the estimated travel and service durations may not perfectly reflect current field conditions. Second, the model used a relatively simple random‑intercept structure with each call treated as independent, which does not explicitly capture other dependencies such as concurrent calls or time‑of‑day effects. Future work should explore integrating real GPS‑based travel times, testing alternative optimization methods for vehicle placement, and validating results against observed response data once the new station is operational.
 
 Overall, the analysis demonstrates that EMS station location and vehicle allocation have measurable effects on response performance across Vance County. Among the five scenarios, Scenario 3 with a near‑north station produced the most favorable results, reducing mean effective response times by roughly 13 percent compared with the current setup.The mixed‑effects model fit well according to diagnostic checks, and the scenario effects were statistically significant despite modest marginal R² values.
 
@@ -251,8 +253,6 @@ ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
 
 ### Modeling
 
-Linear Mixed Model:
-
 ```{r, echo=FALSE}
 ems <- ems %>% mutate(call_id = row_number())
 
@@ -440,13 +440,34 @@ kable(goftab,
 plot(fitted(mod_lmm_filt), resid(mod_lmm_filt),
      xlab = "Fitted values",
      ylab = "Residuals",
-     main = "Residuals vs Fitted")
+     main = "Figure 4: Residuals vs Fitted")
 abline(h = 0, col = "red")
 
 ```
 
+Figure 5:
 ```{r}
 qqnorm(resid(mod_lmm_filt))
 qqline(resid(mod_lmm_filt), col = "red")
+```
+
+```{r}
+ems_long_filt <- ems_long_filt %>%
+  mutate(
+    fitted = fitted(mod_lmm_filt),
+    resid  = resid(mod_lmm_filt)
+  )
+
+# Plot residuals vs fitted for each scenario
+ggplot(ems_long_filt, aes(x = fitted, y = resid)) +
+  geom_point(alpha = 0.6, size = 1.8) +
+  geom_hline(yintercept = 0, color = "red") +
+  facet_wrap(~ scenario, scales = "free_x") +
+  labs(
+    title = "Figure 6: Residuals vs Fitted Values by Scenario",
+    x = "Fitted Values (log response time)",
+    y = "Residuals"
+  ) +
+  theme_minimal(base_size = 12)
 ```
 
