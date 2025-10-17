@@ -436,11 +436,12 @@ kable(goftab,
 
 ```
 
+Figure 4: 
 ```{r}
 plot(fitted(mod_lmm_filt), resid(mod_lmm_filt),
      xlab = "Fitted values",
      ylab = "Residuals",
-     main = "Figure 4: Residuals vs Fitted")
+     main = "Residuals vs Fitted")
 abline(h = 0, col = "red")
 
 ```
