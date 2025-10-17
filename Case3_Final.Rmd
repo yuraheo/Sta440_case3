@@ -338,7 +338,7 @@ ems_S4 <- build_scenario_units(ems, "S4")
 ```
 
 
-```{r}
+```{r, echo = FALSE}
 # Convert scenario to factor
 ems_long <- ems %>%
   bind_rows(
@@ -361,7 +361,7 @@ ems_long <- ems_long %>%
   filter(!is.na(log_eff_time), !is.na(assigned_station))
 ```
 
-```{r}
+```{r, echo=FALSE}
 # Mixed effects model: travel_time ~ scenario + (1 |call_id)
 # Here, assigned_station is a random intercept
 mod_lmm <- lmer(
@@ -372,15 +372,19 @@ summary(mod_lmm)
 
 aic_val  <- AIC(mod_lmm)
 bic_val  <- BIC(mod_lmm)
-r2_vals  <- performance::r2_nakagawa(mod_lmm)  # marginal and conditional R²
-icc_val  <- performance::icc(mod_lmm)          # intraclass correlation
+icc_val  <- icc(mod_lmm)
 
-cat("\nGoodness-of-fit metrics:\n",
-    "AIC =", aic_val, "\n",
-    "BIC =", bic_val, "\n",
-    "Marginal R² =", r2_vals$R2_marginal, "\n",
-    "Conditional R² =", r2_vals$R2_conditional, "\n",
-    "ICC =", icc_val$ICC_adjusted, "\n")
+goftab <- data.frame(
+  Metric = c("AIC", "BIC", "ICC"),
+  Value  = c(aic_val,
+             bic_val,
+             icc_val$ICC_adjusted)
+)
+
+kable(goftab,
+      digits = 4,
+      caption = "Goodness-of-fit metrics for mixed model",
+      align = c("l", "r"))
 ```
 
 ```{r}
@@ -396,28 +400,42 @@ mod_lmm_filt <- lmer(
 )
 summary(mod_lmm_filt)
 
+```
+
+```{r}
 plot(fitted(mod_lmm_filt), resid(mod_lmm_filt),
      xlab = "Fitted values",
      ylab = "Residuals",
      main = "Residuals vs Fitted")
 abline(h = 0, col = "red")
 
+```
 
+```{r}
 qqnorm(resid(mod_lmm_filt))
 qqline(resid(mod_lmm_filt), col = "red")
+```
 
+
+```{r}
 aic_val  <- AIC(mod_lmm_filt)
 bic_val  <- BIC(mod_lmm_filt)
 r2_vals  <- performance::r2_nakagawa(mod_lmm_filt)  # marginal and conditional R²
 icc_val  <- performance::icc(mod_lmm_filt)          # intraclass correlation
 
-cat("\nGoodness-of-fit metrics:\n",
-    "AIC =", aic_val, "\n",
-    "BIC =", bic_val, "\n",
-    "Marginal R² =", r2_vals$R2_marginal, "\n",
-    "Conditional R² =", r2_vals$R2_conditional, "\n",
-    "ICC =", icc_val$ICC_adjusted, "\n")
+goftab <- data.frame(
+  Metric = c("AIC", "BIC", "Marginal R²", "Conditional R²", "ICC"),
+  Value  = c(aic_val,
+             bic_val,
+             r2_vals$R2_marginal,
+             r2_vals$R2_conditional,
+             icc_val$ICC_adjusted)
+)
 
-
+kable(goftab,
+      digits = 4,
+      caption = "Goodness-of-fit metrics for mixed model",
+      align = c("l", "r"))
 
 ```
+
