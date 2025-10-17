@@ -37,18 +37,15 @@ To evaluate the effect of station allocation on EMS performance, we modeled the 
 
 First, we implemented a linear mixed effects model using the log of effective response time as the outcome. We applied a log transformation to stabilize the variance and reduce the influence of extreme response times. This model includes scenario as a fixed effect and call ID as a random intercept to account for repeated structure and inherent variability between calls. Overall, this allows us to estimate how each proposed scenario differs from the current configuration (scenario 0) while controlling for random differences between calls. The LMM provides an interpretable baseline and straightforward comparison of expected log response times across all scenarios. 
 
-While the LMM assumes normally distributed residuals, response time data is inherently positive and right skewed. So, to better reflect this distribution, we refit the model using a Gamma GLMM with a log link. Overall, this model preserves the non-negativity of response times and provides a more realistic representation of variability in emergency response performance. We also used a natural cubic spline for hour of the day to capture nonlinear patterns that are associated with traffic and call volume. 
-
 Finally, to complement our time based models, we fit a logistic regression model estimating the probability that the call would be assigned to a different base under each scenario compared to the current system. This model quantifies potential operational disruption, identifying which configurations maintain the most stable dispatch patterns. 
 
 ## Model Implementation and Evaluation
 
 First, we simulated system performance under the five configurations to evaluate each allocation scenario. For each call, we identified which station would respond under each scenario based on the minimum effective response time, the sum of estimated travel time and the unit’s waiting time before becoming available. We generated a dataset for each scenario using a queue based function which first sorted calls by dispatch time, then assigned an available ambulance to each call using travel and wait times, then updated the next available time for each unit, and finally recorded the total effective response time for each trip under the given scenario. These datasets were combined into a single long format data frame that we used for our models. 
 
-First, we implemented our Linear Mixed Effects Model (LMM). We fit this model using the lmer() function with log transformed response time as the dependent variable. We used call ID as the random intercept to account for unobserved heterogeneity across calls. Then, we implemented our Gamma GLMM using the glmmTMB() function. Finally, we implemented a binomial logistic model using the glm() function with the family set to binomial.
+First, we implemented our Linear Mixed Effects Model (LMM). We fit this model using the lmer() function with log transformed response time as the dependent variable. We used call ID as the random intercept to account for unobserved heterogeneity across calls. 
 
-\
-ADD EVALUATION
+The model diagnostics and goodness‑of‑fit results show that the mixed‑effects model fits the data reasonably well. The AIC (1286.5) and BIC (1318.8) values are both lower than in earlier model runs, which indicates that this version provides a better overall fit. The marginal R² of about 0.05 means the station scenario itself explains around 5% of the variation in the log of response times, while the conditional R² of roughly 0.35 shows that the full model—including call‑specific random effects—accounts for about a third of the total variability. The intraclass correlation coefficient (ICC ≈ 0.32) suggests that nearly one‑third of the variation in response time comes from consistent differences between calls, which supports keeping the random intercept for call_id in the model. Overall, these results suggest that the model does a good job of capturing key patterns in the data; the scenario effects aren’t huge, but they’re meaningful both statistically and operationally.
 
 ## Results
 
@@ -58,7 +55,7 @@ ADD EVALUATION
 
 ## Appendix
 
-```{r}
+```{r, echo=FALSE}
 #| label: load-libaries 
 
 library(tidyverse)
@@ -82,7 +79,7 @@ library(knitr)
 
 ### Data
 
-```{r}
+```{r, echo=FALSE}
 #| label: load-data
 
 load("emsData.RData")
@@ -103,7 +100,7 @@ ems <- ems %>%
   )
 ```
 
-```{r}
+```{r, echo=FALSE}
 #| label: add scenario
 
 # pmin: minimum travel time across the stafed stations 
@@ -129,7 +126,7 @@ ems <- ems %>%
 
 ### Scenario Table
 
-```{r}
+```{r,echo=FALSE}
 # Create the data frame
 scenario_table <- data.frame(
   Station = c("Far North", "Near North", "Central", "South"),
@@ -151,7 +148,7 @@ kable(
 
 ### EDA
 
-```{r}
+```{r,echo=FALSE}
 #| label: EDA
 
 # Response Times By Scenarios Boxplot
@@ -249,7 +246,9 @@ ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
 
 Linear Mixed Model:
 
-```{r}
+```{r, echo=FALSE}
+ems <- ems %>% mutate(call_id = row_number())
+
 # 1️⃣ Define number of units per scenario
 scenario_units <- list(
   S0 = c(FN = 0, NN = 0, Ce = 3, So = 1),
@@ -338,7 +337,6 @@ ems_S3 <- build_scenario_units(ems, "S3")
 ems_S4 <- build_scenario_units(ems, "S4")
 ```
 
-Convert to one data set for LMM
 
 ```{r}
 # Convert scenario to factor
@@ -361,7 +359,9 @@ ems_long <- ems_long %>%
     log_eff_time = log(eff_time_sec)
   ) %>%
   filter(!is.na(log_eff_time), !is.na(assigned_station))
+```
 
+```{r}
 # Mixed effects model: travel_time ~ scenario + (1 |call_id)
 # Here, assigned_station is a random intercept
 mod_lmm <- lmer(
@@ -369,145 +369,55 @@ mod_lmm <- lmer(
   data = ems_long, REML = TRUE
 )
 summary(mod_lmm)
+
+aic_val  <- AIC(mod_lmm)
+bic_val  <- BIC(mod_lmm)
+r2_vals  <- performance::r2_nakagawa(mod_lmm)  # marginal and conditional R²
+icc_val  <- performance::icc(mod_lmm)          # intraclass correlation
+
+cat("\nGoodness-of-fit metrics:\n",
+    "AIC =", aic_val, "\n",
+    "BIC =", bic_val, "\n",
+    "Marginal R² =", r2_vals$R2_marginal, "\n",
+    "Conditional R² =", r2_vals$R2_conditional, "\n",
+    "ICC =", icc_val$ICC_adjusted, "\n")
 ```
 
-The scenario/station combination with the **largest negative coefficient** (biggest reduction in travel time) identifies **which North station location would better serve the community**.
-
--   So based on our results, it would be S3 which means moving a central truck up to near north.
-
--   lmm2: add natural cubic spline for a nonlinear time-of-day effect (slower response during rush hour, faster overnight)
-
 ```{r}
-# lmm2: add missing structure
-library(splines)
+ems_long_filt <- ems_long %>%
+  group_by(call_id) %>%
+  mutate(var_eff = var(eff_time_sec, na.rm = TRUE)) %>%
+  ungroup() %>%
+  filter(var_eff > 0, eff_time_sec < 2000)
 
-mod_lmm_spline <- lmer(
-  log_eff_time ~ scenario + ns(hour, df = 4) + (1 | call_id),
-  data = ems_long,
-  REML = TRUE
+mod_lmm_filt <- lmer(
+  log(eff_time_sec) ~ scenario + (1 | call_id) ,
+  data = ems_long_filt, REML = TRUE
 )
-summary(mod_lmm_spline)
-```
+summary(mod_lmm_filt)
 
-#### Residuals + Diagnostics
-
-```{r}
-plot(fitted(mod_lmm), resid(mod_lmm),
+plot(fitted(mod_lmm_filt), resid(mod_lmm_filt),
      xlab = "Fitted values",
      ylab = "Residuals",
      main = "Residuals vs Fitted")
 abline(h = 0, col = "red")
 
 
-qqnorm(resid(mod_lmm))
-qqline(resid(mod_lmm), col = "red")
-```
+qqnorm(resid(mod_lmm_filt))
+qqline(resid(mod_lmm_filt), col = "red")
 
-QQ plot with spline
+aic_val  <- AIC(mod_lmm_filt)
+bic_val  <- BIC(mod_lmm_filt)
+r2_vals  <- performance::r2_nakagawa(mod_lmm_filt)  # marginal and conditional R²
+icc_val  <- performance::icc(mod_lmm_filt)          # intraclass correlation
 
-```{r}
-plot(fitted(mod_lmm_spline), resid(mod_lmm_spline),
-     xlab="Fitted values", ylab="Residuals", main="Residuals vs Fitted")
-abline(h=0, col="red")
-
-qqnorm(resid(mod_lmm_spline))
-qqline(resid(mod_lmm_spline), col="red")
-
-```
-
-```{r}
+cat("\nGoodness-of-fit metrics:\n",
+    "AIC =", aic_val, "\n",
+    "BIC =", bic_val, "\n",
+    "Marginal R² =", r2_vals$R2_marginal, "\n",
+    "Conditional R² =", r2_vals$R2_conditional, "\n",
+    "ICC =", icc_val$ICC_adjusted, "\n")
 
 
-mod_final <- glmmTMB(
-  eff_time_sec ~ scenario + ns(hour, df = 4) + (1 | call_id),
-  data = ems_long,
-  family = Gamma(link = "log")
-)
 
-summary(mod_final)
-
-# Model check
-plot(simulateResiduals(mod_final, n = 1000))
-```
-
-```{r}
-# Estimated marginal means on response scale
-emm_final <- emmeans(mod_final, ~ scenario, type = "response")
-emm_df_final <- as.data.frame(emm_final)
-
-
-ggplot(emm_df_final, aes(x = scenario, y = response, fill = scenario)) +
-  geom_col(alpha = 0.7) +
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width = 0.2) +
-  labs(
-    title = "Predicted Response Time by Scenario (Gamma GLMM)",
-    y = "Predicted Mean Effective Response Time (seconds)",
-    x = "Scenario"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(legend.position = "none")
-```
-
-Logistic Model
-
-```{r}
-# Collect assigned stations from all scenario datasets
-assignments <- list(
-  S0 = ems_S0 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station),
-  S1 = ems_S1 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station),
-  S2 = ems_S2 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station),
-  S3 = ems_S3 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station),
-  S4 = ems_S4 %>% mutate(call_id = row_number()) %>% select(call_id, assigned_station)
-)
-
-# Combine into a single frame
-assign_df <- reduce(names(assignments), function(df, s) {
-  left_join(df, assignments[[s]] %>% rename(!!paste0("assigned_", s) := assigned_station),
-            by = "call_id")
-}, .init = assignments$S0)
-
-assign_df <- assign_df %>%
-  mutate(
-    change_S1 = assigned_S1 != assigned_S0,
-    change_S2 = assigned_S2 != assigned_S0,
-    change_S3 = assigned_S3 != assigned_S0,
-    change_S4 = assigned_S4 != assigned_S0
-  )
-
-assign_long <- assign_df %>%
-  pivot_longer(cols = starts_with("change_"),
-               names_to = "scenario",
-               values_to = "changed") %>%
-  mutate(
-    scenario = str_remove(scenario, "change_"),
-    changed = as.integer(changed)
-  )
-
-fit_change <- glm(changed ~ scenario, data = assign_long, family = binomial)
-summary(fit_change)
-```
-
-```{r}
-pred_change <- emmeans(fit_change, ~ scenario, type = "response")
-as.data.frame(pred_change)
-
-ggplot(as.data.frame(pred_change),
-       aes(x = scenario, y = prob*100)) +
-  geom_col(fill = "#2E86AB") +
-  geom_errorbar(aes(ymin = asymp.LCL*100, ymax = asymp.UCL*100), width = 0.2) +
-  labs(title = "Probability of Call Reassignment by Scenario",
-       y = "% Calls Changing Assigned Station", x = "Scenario") +
-  theme_minimal()
-```
-
-```{r}
-plot(fitted(fit_change), resid(fit_change),
-     xlab = "Fitted values",
-     ylab = "Residuals",
-     main = "Residuals vs Fitted")
-abline(h = 0, col = "red")
-
-
-qqnorm(resid(fit_change))
-qqline(resid(fit_change), col = "red")
 ```
