@@ -73,6 +73,7 @@ library(lmerTest)
 library(DHARMa)
 library(glmmTMB)
 library(knitr)
+library(broom.mixed)
 
 
 ```
@@ -368,7 +369,7 @@ mod_lmm <- lmer(
   log_eff_time ~ scenario + (1 | call_id),
   data = ems_long, REML = TRUE
 )
-summary(mod_lmm)
+#summary(mod_lmm)
 
 aic_val  <- AIC(mod_lmm)
 bic_val  <- BIC(mod_lmm)
@@ -399,6 +400,13 @@ mod_lmm_filt <- lmer(
   data = ems_long_filt, REML = TRUE
 )
 summary(mod_lmm_filt)
+
+fe_table <- tidy(mod_lmm_filt, effects = "fixed", conf.int = TRUE)
+
+# Print a nice table
+kable(fe_table,
+      digits = 4,
+      caption = "Fixed‑effects estimates for the mixed‑effects model")
 
 ```
 
