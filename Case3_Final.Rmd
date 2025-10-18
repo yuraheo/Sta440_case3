@@ -43,7 +43,7 @@ Finally, to complement our time based models, we fit a logistic regression model
 
 First, we simulated system performance under the five configurations to evaluate each allocation scenario. For each call, we identified which station would respond under each scenario based on the minimum effective response time, the sum of estimated travel time and the unit’s waiting time before becoming available. We generated a dataset for each scenario using a queue based function which first sorted calls by dispatch time, then assigned an available ambulance to each call using travel and wait times, then updated the next available time for each unit, and finally recorded the total effective response time for each trip under the given scenario. These datasets were combined into a single long format data frame that we used for our models.
 
-First, we implemented our Linear Mixed Effects Model (LMM). We fit this model using the lmer() function with log transformed response time as the dependent variable. We used call ID as the random intercept to account for unobserved heterogeneity across calls. 
+Then, we implemented our Linear Mixed Effects Model (LMM). We fit this model using the lmer() function with log transformed response time as the dependent variable. We used call ID as the random intercept to account for unobserved heterogeneity across calls. 
 
 The model diagnostics and goodness‑of‑fit results show that the mixed‑effects model fits the data reasonably well. The AIC (1286.5) and BIC (1318.8) values are both lower than in earlier model runs, which indicates that this version provides a better overall fit (Table 4). The marginal R² of about 0.05 means the station scenario itself explains around 5% of the variation in the log of response times, while the conditional R² of roughly 0.35 shows that the full model—including call‑specific random effects—accounts for about a third of the total variability (Table 4). The intraclass correlation coefficient (ICC ≈ 0.32) suggests that nearly one‑third of the variation in response time comes from consistent differences between calls, which supports keeping the random intercept for call_id in the model. Overall, these results suggest that the model does a good job of capturing key patterns in the data, the scenario effects aren’t huge, but they’re meaningful.
 
@@ -336,7 +336,6 @@ build_scenario_units <- function(data, scenario_name) {
 }
 
 
-# 3️⃣ Build scenario datasets
 ems_S0 <- build_scenario_units(ems, "S0")
 ems_S1 <- build_scenario_units(ems, "S1")
 ems_S2 <- build_scenario_units(ems, "S2")
@@ -472,3 +471,61 @@ ggplot(ems_long_filt, aes(x = fitted, y = resid)) +
   theme_minimal(base_size = 12)
 ```
 
+
+```{r}
+
+# estimated marginal means (EMMs) on response scale (seconds)
+emm <- emmeans(mod_lmm_filt, ~ scenario, tran = "log", type = "response")
+emm_df <- as_tibble(emm) %>%
+  # response = back-transformed mean (sec); convert to minutes too if you like
+  mutate(response_min   = response / 60,
+         lower.CL_min   = lower.CL / 60,
+         upper.CL_min   = upper.CL / 60)
+
+# Base distribution (observed) for context
+obs_df <- ems_long_filt %>%
+  mutate(eff_time_min = eff_time_sec / 60) 
+
+
+ggplot(emm_df, aes(x = scenario, y = response_min, fill = scenario)) +
+  geom_col(alpha = 0.7, width = 0.6) +  # "box" style (bar for mean)
+  geom_errorbar(aes(ymin = lower.CL_min, ymax = upper.CL_min), width = 0.15, linewidth = 0.7) +
+  labs(
+    title = "Figure 7: Predicted Response Times by Scenario (LMM)",
+    subtitle = "Model-adjusted mean and 95% CI",
+    x = "Scenario",
+    y = "Predicted Mean Effective Response Time (minutes)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+
+
+ggplot() +
+  # observed distribution by scenario
+  geom_violin(data = obs_df,
+              aes(x = scenario, y = eff_time_min),
+              fill = "grey90", linewidth = 0.2, width = 0.9, scale = "width", trim = TRUE) +
+  geom_boxplot(data = obs_df,
+               aes(x = scenario, y = eff_time_min),
+               width = 0.2, outlier.shape = NA, fill = "white", linewidth = 0.3) +
+  # model EMMs (back-transformed) with 95% CI
+  geom_errorbar(data = emm_df,
+                aes(x = scenario, ymin = lower.CL_min, ymax = upper.CL_min),
+                width = 0.15, linewidth = 0.6) +
+  geom_point(data = emm_df,
+             aes(x = scenario, y = response_min),
+             size = 2.5) +
+  labs(
+     title = "Figure 8: Predicted Response Times by Scenario with Observed Distributions",
+  subtitle = "Points and error bars show estimated marginal means with 95% CIs.\nViolin and boxplots represent observed response time distributions.",
+  x = "Scenario",
+    y = "Effective response time (minutes)"
+  ) +
+  theme_minimal(base_size = 12)
+
+
+```
