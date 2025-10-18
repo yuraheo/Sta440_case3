@@ -49,13 +49,13 @@ First, we simulated system performance under five configurations to evaluate eac
 
 To capture system dynamics, we incorporated the number of ambulance units stationed at each location under each scenario. The number of available units was defined in a configuration table (e.g., three units at Central, one at South, and varying allocations for the Near-North and Far-North stations). This allowed each scenario to represent a different system load and deployment strategy.
 
-We generated a dataset for each scenario using a queue-based simulation function. The simulation first sorted all calls by dispatch time, then iteratively assigned ambulances based on availability and proximity. For each station, the model tracked the next available time for every unit. When a call occurred, the algorithm selected the station with the shortest effective response time—combining travel and potential waiting time. If the nearest station’s units were all busy, the model automatically selected the next closest station with an available unit. After a unit was dispatched, its return time was updated according to the recorded duration between dispatch and availability.
+We generated a dataset for each scenario using a queue-based simulation function. When looking at system performance, we considered both travel times and overall system load, since ambulance availability affects how fast a unit can respond.The simulation first sorted all calls by dispatch time, then iteratively assigned ambulances based on availability and proximity. For each station, the model tracked the next available time for every unit. When a call occurred, the algorithm selected the station with the shortest effective response time—combining travel and potential waiting time. If the nearest station’s units were all busy, the model automatically selected the next closest station with an available unit. After a unit was dispatched, its return time was updated according to the recorded duration between dispatch and availability. By updating each unit’s next available time after every call, our model captured how workload and availability impact response times across scenarios.
 
 Then, we implemented our Linear Mixed Effects Model (LMM). We fit this model using the lmer() function with log transformed response time as the dependent variable. We used call ID as the random intercept to account for unobserved heterogeneity across calls. 
 
-The model diagnostics and goodness‑of‑fit results show that the mixed‑effects model fits the data reasonably well. The AIC (1286.5) and BIC (1318.8) values are both lower than in earlier model runs, which indicates that this version provides a better overall fit (Table 4). The marginal R² of about 0.05 means the station scenario itself explains around 5% of the variation in the log of response times, while the conditional R² of roughly 0.35 shows that the full model—including call‑specific random effects—accounts for about a third of the total variability (Table 4). The intraclass correlation coefficient (ICC ≈ 0.32) suggests that nearly one‑third of the variation in response time comes from consistent differences between calls, which supports keeping the random intercept for call_id in the model. Overall, these results suggest thatthe model effectively captures both the scenario-level effects and the impact of system load on EMS response performance.
+The model diagnostics and goodness‑of‑fit results show that the mixed‑effects model fits the data reasonably well. The AIC (1286.5) and BIC (1318.8) values are both lower than in earlier model runs, which indicates that this version provides a better overall fit (Table 4). The intraclass correlation coefficient (ICC ≈ 0.32) suggests that nearly one‑third of the variation in response time comes from consistent differences between calls, which supports keeping the random intercept for call_id in the model. Overall, these results suggest that the model effectively captures both the scenario-level effects and the impact of system load on EMS response performance.
 
-The residuals‑versus‑fitted plot shows that the residuals are roughly centered around zero across the range of fitted values, with no strong pattern or funnel shape (Figure 4). This suggests that the model assumptions of linearity and constant variance are reasonable. The normal Q–Q plot indicates that the residuals follow an approximately normal distribution, as most points fall along the reference line with only minor deviations in the tails (Figure 5).
+The residuals‑versus‑fitted plot shows that the residuals are roughly centered around zero across the range of fitted values, with no strong pattern or funnel shape (Figure 4). This suggests that the model assumptions of linearity and constant variance are reasonable. The normal Q–Q plot indicates that the residuals follow an approximately normal distribution, as most points fall along the reference line with only minor deviations in the tails (Figure 5). Then, we also plotted the QQ Plot for fixed effects, which indicated a slight fan‑shaped pattern in a few panels (particularly S0 and S2), indicating modest heteroscedasticity where residuals spread more at lower fitted values (Figure 6).
 
 ## Results
 
@@ -72,8 +72,9 @@ Overall, to answer the two research questions of which north station and which s
 
 While the mixed‑effects model and simulation framework provided clear insights into how station allocation impacts EMS response times, there are still some limitations. First, the analysis relied on simulated dispatch and travel times based on historical patterns rather than real‑time routing or current traffic data. This means the estimated travel and service durations may not perfectly reflect current field conditions. Second, the model used a relatively simple random‑intercept structure with each call treated as independent, which does not explicitly capture other dependencies such as concurrent calls or time‑of‑day effects. Future work should explore integrating real GPS‑based travel times, testing alternative optimization methods for vehicle placement, and validating results against observed response data once the new station is operational.
 
-Overall, the analysis demonstrates that EMS station location and vehicle allocation have measurable effects on response performance across Vance County. Among the five scenarios, Scenario 3 with a near‑north station produced the most favorable results, reducing mean effective response times by roughly 13 percent compared with the current setup.The mixed‑effects model fit well according to diagnostic checks, and the scenario effects were statistically significant despite modest marginal R² values.
+Overall, the analysis demonstrates that EMS station location and vehicle allocation have measurable effects on response performance across Vance County. Among the five scenarios, Scenario 3 with a near‑north station produced the most favorable results, reducing mean effective response times by roughly 13 percent compared with the current setup. 
 
+\newpage 
 ## Appendix
 
 ```{r, echo=FALSE}
@@ -99,7 +100,6 @@ library(broom.mixed)
 
 ```
 
-### Data
 
 ```{r, echo=FALSE}
 #| label: load-data
@@ -146,10 +146,9 @@ ems <- ems %>%
   )
 ```
 
-### Scenario Table
 
-```{r,echo=FALSE}
-# Create the data frame
+```{r, echo=FALSE, fig.cap = "This shows the different scenarios in consideration for this case.", warning=FALSE}
+
 scenario_table <- data.frame(
   Station = c("Far North", "Near North", "Central", "South"),
   S0 = c(0, 0, 3, 1),
@@ -159,18 +158,16 @@ scenario_table <- data.frame(
   S4 = c(1, 0, 2, 1)
 )
 
-# Display as a nicely formatted table
 kable(
   scenario_table,
-  caption = "Table 1: Ambulance allocation under each scenario",
+  caption = "Ambulance allocation under each scenario",
   align = "lccccc",
   booktabs = TRUE
 )
 ```
 
-### EDA
 
-```{r,echo=FALSE}
+```{r,echo=FALSE, fig.cap = "This box plot shows variation in estimated response times across all five deployment scenarios.", warning=FALSE}
 #| label: EDA
 
 # Response Times By Scenarios Boxplot
@@ -194,6 +191,10 @@ ems_long <- ems %>%
     RespTime_min = RespTime / 60
   )
 
+```
+
+
+```{r, echo=FALSE, fig.cap = "This box plot shows Response times by district and scenario illustrate how performance relative to the 8‑minute benchmark."}
 # Response Times by scenario by district boxplots
 ggplot(ems_long, aes(x = Scenario, y = RespTime_min, fill = Scenario)) +
   geom_boxplot(outlier.alpha = 0.2) +
@@ -205,8 +206,10 @@ ggplot(ems_long, aes(x = Scenario, y = RespTime_min, fill = Scenario)) +
   theme_minimal() +
   theme(legend.position="none",
         strip.text = element_text(size=12, face="bold"))
+```
 
-# Fastest Station By Scenario Maps
+
+```{r, echo=FALSE, fig.cap = "Maps display which station provides the fastest estimated travel time (eTT) for each call under different scenario configurations.", fig.width=7, fig.height = 5}
 
 station_names <- c(
   "eTT.BG.Ce" = "Central",
@@ -261,10 +264,8 @@ ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
   theme_bw(base_size = 12) +
   theme(legend.position = "bottom")
 
-
 ```
 
-### Modeling
 
 ```{r, echo=FALSE}
 ems <- ems %>% mutate(call_id = row_number())
@@ -380,9 +381,9 @@ ems_long <- ems_long %>%
   filter(!is.na(log_eff_time), !is.na(assigned_station))
 ```
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, fig.cap = "Goodness‑of‑fit metrics for the initial model prior filtering the response times >2000 seconds." }
+
 # Mixed effects model: travel_time ~ scenario + (1 |call_id)
-# Here, assigned_station is a random intercept
 mod_lmm <- lmer(
   log_eff_time ~ scenario + (1 | call_id),
   data = ems_long, REML = TRUE
@@ -406,7 +407,7 @@ kable(goftab,
       align = c("l", "r"))
 ```
 
-```{r}
+```{r,echo=FALSE,  fig.cap = "Fixed‑effects estimates from the mixed‑effects model summarize how each scenario affects log response time relative to the baseline (S0)."}
 ems_long_filt <- ems_long %>%
   group_by(call_id) %>%
   mutate(var_eff = var(eff_time_sec, na.rm = TRUE)) %>%
@@ -426,18 +427,15 @@ kable(fe_table,
       caption = "Fixed‑effects estimates for the mixed‑effects model")
 
 ```
-```{r}
+
+```{r, echo= FALSE, fig.cap = "Goodness‑of‑fit metrics for the final LMM model with log(response_time) ~ Scenario + (1 | call_id)."}
 aic_val  <- AIC(mod_lmm_filt)
 bic_val  <- BIC(mod_lmm_filt)
-r2_vals  <- performance::r2_nakagawa(mod_lmm_filt)  # marginal and conditional R²
-icc_val  <- performance::icc(mod_lmm_filt)          # intraclass correlation
 
 goftab <- data.frame(
-  Metric = c("AIC", "BIC", "Marginal R²", "Conditional R²", "ICC"),
+  Metric = c("AIC", "BIC", "ICC"),
   Value  = c(aic_val,
              bic_val,
-             r2_vals$R2_marginal,
-             r2_vals$R2_conditional,
              icc_val$ICC_adjusted)
 )
 
@@ -448,8 +446,8 @@ kable(goftab,
 
 ```
 
-Figure 4: 
-```{r}
+
+```{r, fig.cap = "Residuals vs. Fitted Values Plot." }
 plot(fitted(mod_lmm_filt), resid(mod_lmm_filt),
      xlab = "Fitted values",
      ylab = "Residuals",
@@ -458,13 +456,12 @@ abline(h = 0, col = "red")
 
 ```
 
-Figure 5:
-```{r}
+```{r, fig.cap = "QQ Plot for the final model."}
 qqnorm(resid(mod_lmm_filt))
 qqline(resid(mod_lmm_filt), col = "red")
 ```
 
-```{r}
+```{r, fig.cap = "Residuals versus fitted values by scenario (fixed effects)."}
 ems_long_filt <- ems_long_filt %>%
   mutate(
     fitted = fitted(mod_lmm_filt),
@@ -477,7 +474,7 @@ ggplot(ems_long_filt, aes(x = fitted, y = resid)) +
   geom_hline(yintercept = 0, color = "red") +
   facet_wrap(~ scenario, scales = "free_x") +
   labs(
-    title = "Figure 6: Residuals vs Fitted Values by Scenario",
+    title = "Residuals vs Fitted Values by Scenario",
     x = "Fitted Values (log response time)",
     y = "Residuals"
   ) +
@@ -485,7 +482,7 @@ ggplot(ems_long_filt, aes(x = fitted, y = resid)) +
 ```
 
 
-```{r}
+```{r, fig.cap = "Model‑adjusted mean response times and 95% confidence intervals highlight scenario‑level differences.", fig.width=7, fig.height=5}
 
 # estimated marginal means (EMMs) on response scale (seconds)
 emm <- emmeans(mod_lmm_filt, ~ scenario, tran = "log", type = "response")
@@ -504,7 +501,7 @@ ggplot(emm_df, aes(x = scenario, y = response_min, fill = scenario)) +
   geom_col(alpha = 0.7, width = 0.6) +  # "box" style (bar for mean)
   geom_errorbar(aes(ymin = lower.CL_min, ymax = upper.CL_min), width = 0.15, linewidth = 0.7) +
   labs(
-    title = "Figure 7: Predicted Response Times by Scenario (LMM)",
+    title = "Predicted Response Times by Scenario (LMM)",
     subtitle = "Model-adjusted mean and 95% CI",
     x = "Scenario",
     y = "Predicted Mean Effective Response Time (minutes)"
@@ -514,7 +511,7 @@ ggplot(emm_df, aes(x = scenario, y = response_min, fill = scenario)) +
 
 ```
 
-```{r}
+```{r, fig.cap = "Violin and boxplots combine observed response time distributions with predicted scenario means and confidence intervals.", fig.width=7, fig.height=5}
 
 
 ggplot() +
@@ -533,7 +530,7 @@ ggplot() +
              aes(x = scenario, y = response_min),
              size = 2.5) +
   labs(
-     title = "Figure 8: Predicted Response Times by Scenario with Observed Distributions",
+     title = "Predicted Response Times by Scenario with Observed Distributions",
   subtitle = "Points and error bars show estimated marginal means with 95% CIs.\nViolin and boxplots represent observed response time distributions.",
   x = "Scenario",
     y = "Effective response time (minutes)"
