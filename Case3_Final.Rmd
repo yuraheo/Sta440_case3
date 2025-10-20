@@ -177,7 +177,7 @@ ems %>%
   ggplot(aes(scenario, resp_time_min, fill = scenario)) +
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim = c(0, 20)) +   # 1000 sec ≈ 16.7 min
-  labs(title = "Figure 1: Response time by scenario",
+  labs(title = "Response time by scenario",
        x = "Scenario", y = "Estimated response time (minutes)") +
   theme(legend.position = "none")
 
@@ -200,7 +200,7 @@ ggplot(ems_long, aes(x = Scenario, y = RespTime_min, fill = Scenario)) +
   geom_boxplot(outlier.alpha = 0.2) +
   facet_wrap(~REF.GRID, scales = "free_y") +
   geom_hline(yintercept=8, linetype="dashed", color="red") +
-  labs(title="Figure 2: Response Times Across Scenarios by District",
+  labs(title="Response Times Across Scenarios by District",
        subtitle="Dashed red line = 8-minute benchmark",
        x="Scenario", y="Response Time (minutes)") +
   theme_minimal() +
@@ -258,7 +258,7 @@ ggplot(winners, aes(REF.GPS.LON, REF.GPS.LAT, color = fastest)) +
   coord_quickmap() +
   facet_wrap(~ scenario, ncol = 3) +
   labs(
-    title = "Figure 3: Fastest station by scenario (eTT)",
+    title = "Fastest station by scenario (eTT)",
     x = "Longitude", y = "Latitude"
   ) +
   theme_bw(base_size = 12) +
