@@ -66,7 +66,7 @@ Figure 7 displays the model-adjusted mean effective response times with 95% conf
 
 Figure 8 overlays the model-estimated marginal means (black points and error bars) on the observed response-time distributions (violin and boxplots). This combined view highlights both the model-predicted averages and the variability in actual responses. The wider spread of times in S1 and S2 reflects greater operational uncertainty under those configurations, while S3 shows both a lower predicted mean and a more compact distribution, suggesting more consistent, faster responses.
 
-Overall, to answer the two research questions of which north station and which scenario would be the best, among the proposed designs, Scenario 3 (the near-north station with balanced vehicle allocation) produced the most desirable outcomes—reducing expected response times by roughly 13% relative to the current configuration—while Scenario 2 (far-north placement only) performed worst, increasing average response times by about 30%.
+Overall, our analysis shows that the near-north station outperforms the far-north option. Among the proposed designs, Scenario 3, which uses the near-north station with a balanced vehicle allocation, produced the most desirable outcomes, reducing expected response times by roughly 13% relative to the current configuration, whereas Scenario 2 (far-north placement only) performed worst, increasing average response times by about 30%.
 
 ## Limitations and Conclusion
 
